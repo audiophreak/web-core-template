@@ -18,8 +18,19 @@ _exclude:
   - node_modules
   - .next
 
+# Lockfiles live in locks/ (outside the rendered tree) and are selected by `lock_key` below.
+# Optional features are questions of the same name as their entry in features.yml.
+
 # Deliberately no `_tasks`, `_migrations` or `_jinja_extensions`: they execute code and
 # would force users to run Copier with --trust. Generation only renders files.
+
+# Booleans are written as `type: yaml` with `choices: [false, true]` and an `is boolean` validator,
+# not `type: bool`. Copier casts a `bool` answer BEFORE validators run, so `--data zod=banana` was
+# silently accepted as true. A `yaml` answer keeps its parsed type, so the validator can reject
+# anything that is not a YAML boolean (`true`/`false`, `yes`/`no`, `on`/`off`, each in lower, Title
+# or UPPER case); `banana`, `1`, `0`, `y`, `tRuE`, an empty string and null are rejected. Answers are still recorded as real
+# booleans, so projects generated before this change keep working. Every boolean question must use
+# this form (a test enforces it).
 
 app_name:
   type: str
@@ -39,6 +50,25 @@ app_description:
     {% endif %}
 
 cache_components:
-  type: bool
+  type: yaml  # a strict boolean: see the note above the questions
   default: true
+  choices: [false, true]
+  validator: >-
+    {% if cache_components is not boolean %}Answer true or false.{% endif %}
   help: "Enable Next.js Cache Components with Partial Prefetching? (data fetching becomes dynamic by default and caching is opt-in; Next.js plans to make both universal in its next major release)"
+
+zod:
+  type: yaml  # a strict boolean: see the note above the questions
+  default: false
+  choices: [false, true]
+  validator: >-
+    {% if zod is not boolean %}Answer true or false.{% endif %}
+  help: "Add Zod schema validation? (adds the exact-pinned `zod` dependency, a shared schema module in src/lib/schemas/ and its tests)"
+
+# Computed: never asked and never recorded. Selects the lockfile that matches the selected
+# dependencies. It must agree with tools/features.py; a test renders every valid configuration
+# and checks that the lockfile it receives is the one that module names.
+lock_key:
+  type: str
+  when: false
+  default: "{{ 'zod' if zod else 'base' }}"

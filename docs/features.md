@@ -1,0 +1,163 @@
+# Optional features
+
+Optional features are how one template produces several kinds of project. This page is the
+mechanics; the reasoning, the alternatives and the roadmap are in the `developer-platform`
+repository (`docs/feature-composition.md`, `docs/full-stack-plan.md`).
+
+Currently available: **`zod`** (Zod schema validation). Everything else is planned there.
+
+## The model
+
+A feature is:
+
+1. a **boolean Copier question** in `copier.yml`, named like the feature, default `false`;
+2. an **entry in `features.yml`**: summary, `requires`, `conflicts`, and `npm: true` if it changes
+   `package.json`;
+3. its **files and blocks** in `template/`, rendered only when the question is true;
+4. **tests that ship in the generated project** and run inside `npm run check`.
+
+Selecting a feature:
+
+```bash
+copier copy --data zod=true ...            # raw Copier: booleans are strict (see Booleans)
+uv run devkit new my-app --set zod=true    # through devkit, which parses booleans strictly
+```
+
+The answer is recorded in the project's `.copier-answers.yml` (`zod: true`). Copier reuses recorded
+answers on every `copier update`, so a project keeps its features across template releases;
+features added by a newer release take their default (off). To switch one on later:
+`copier update --vcs-ref <release> --data zod=true` (tested: it adds the files, the dependency and
+the matching lockfile). Nothing computed is recorded.
+
+Generation never runs a command: no Copier tasks, migrations or Jinja extensions, and no `npm
+install`. Everything a configuration needs is in the template repository.
+
+## What a feature may contain
+
+- **Dependency lines** in `package.json.jinja`, guarded by `{% if feature %}`, with exact versions
+  (the template's supply-chain policy: exact pins, releases at least two weeks old).
+- **Files** in a directory whose *name* renders empty when the feature is off, for example
+  `template/src/lib/{% if zod %}schemas{% endif %}/`. Copier skips a path whose name renders empty
+  (with everything under it), so a disabled feature leaves no files and no empty directories. Files
+  that need no substitution keep no `.jinja` suffix and are copied verbatim.
+- **Small conditional blocks** in shared files (`README.md.jinja`, `AGENTS.md.jinja`, config).
+  Whitespace is part of the contract: with every feature off the output must be byte-identical to
+  the previous release; `tools/compare_release.py <tag>` checks it.
+- **Tests and documentation** for the feature, in the generated project.
+
+## Rules between features
+
+`features.yml` states them; `copier.yml` enforces them at generation, for every front-end:
+
+```yaml
+# features.yml
+forms:
+  summary: React Hook Form with Zod resolvers
+  requires: [zod]
+  npm: true
+```
+
+```yaml
+# copier.yml: questions are asked in order, so a prerequisite must come before what needs it
+forms:
+  type: bool
+  default: false
+  validator: >-
+    {% if forms and not zod %}forms requires zod.{% endif %}
+```
+
+`tools/features.py` turns the registry into the **supported matrix** (every selection that
+satisfies the rules). Tests enumerate it: every valid configuration is rendered and must have
+the right dependencies and lockfile, a test checks each feature's rules are mirrored in
+`copier.yml`, and synthetic registries cover requires, conflicts, chains, cycles and unknown
+references. Invalid selections are rejected by the validators before anything is written.
+
+## Lockfiles: one per dependency set
+
+A lockfile cannot be composed from pieces, and generation may not resolve dependencies. So the
+repository commits **one complete lockfile per distinct set of npm dependencies**:
+
+```
+locks/base.json     the reference lock (no npm-affecting feature)
+locks/zod.json      base plus zod
+```
+
+- `template/package-lock.json.jinja` is a one-line shim that includes `locks/<key>.json`. `lock_key`
+  is a computed question in `copier.yml` (never asked, never recorded). Copier's Jinja search path is
+  the repository root, which is why `locks/` sits outside `template/` and is never rendered itself.
+- The key names only features marked `npm: true`, sorted and joined with `+`, so a feature that adds
+  no dependency (for example Docker services) shares the base lock. The key is computed in
+  `copier.yml` and in `tools/features.py`; a test renders every configuration and checks they agree.
+- `uv run python tools/refresh_locks.py` writes or refreshes the lockfiles (`--check` changes
+  nothing and exits 1 if one would change). It starts from the **base lock** and lets npm add only
+  what the extra dependencies need, with `--before` set to two weeks ago so new transitive packages
+  respect the age rule. It refuses to write a lock that is not strictly additive.
+- Tests verify, for every lockfile: the project name is templated in exactly two places; it matches
+  the generated `package.json`; every package comes from the npm registry with an integrity hash
+  (bundled packages are covered by their parent's); a feature lock keeps every base package at the
+  same version, source and hash; **no new install scripts**; and there are no orphan lockfiles.
+- The `zod` case is instructive: Zod is already in the base lock as a development-only transitive
+  dependency of the shadcn CLI, at the same version, so enabling the feature only adds it to the
+  project's own dependencies and promotes the entry to a production dependency.
+
+### Limits of the lockfile matrix
+
+Lockfiles needed = distinct npm dependency sets, not 2^features, and each is about 400 KB. A test
+fails if the matrix exceeds 16. Before that point, stop allowing every combination and declare a
+short list of supported presets in `features.yml` instead; the tooling then enumerates the
+presets, not all subsets. Features that need their own toolchain or cadence (a native iOS client)
+belong in a separate add-on template, not in this matrix (see the platform's
+`docs/feature-composition.md`).
+
+## Adding a feature: checklist
+
+1. Add the question to `copier.yml` in the strict boolean form (`type: yaml`, `choices: [false,
+   true]`, the `is boolean` validator, default false, `help`), after its prerequisites, with a
+   validator for each rule; add the entry to `features.yml`.
+2. Add the dependency line(s) to `package.json.jinja` (exact versions, at least two weeks old; check
+   the license and that the package has no install script).
+3. Add files under conditionally named directories; add conditional blocks to shared files.
+4. If the feature is `npm: true`, extend the `lock_key` default in `copier.yml` to name it, then run
+   `uv run python tools/refresh_locks.py` and review `git diff --stat locks/`.
+5. Write generated tests that show acceptance and rejection, and a render test file like
+   `tests/test_zod_feature.py`.
+6. Format the new generated files with the project's own Prettier (`npm ci` in a generated
+   project, `npx prettier --write`), then copy them back.
+7. Run `uv run python tools/compare_release.py <previous tag>`: with every feature off the
+   project must be byte-identical to that release (apart from `.copier-answers.yml`). Then run
+   `uv run pytest` and update `CHANGELOG.md` and these docs.
+8. Declare the option in the platform's profile registry when releasing (`devkit --set`).
+
+## Booleans are strict
+
+Copier casts a `type: bool` answer **before** validators run, so a validator can never see
+`banana`, and `--data zod=banana` used to enable a feature silently. Every boolean question
+therefore uses this form instead:
+
+```yaml
+zod:
+  type: yaml
+  default: false
+  choices: [false, true]
+  validator: >-
+    {% if zod is not boolean %}Answer true or false.{% endif %}
+```
+
+A `yaml` answer keeps its parsed type, so the validator rejects anything that is not a YAML
+boolean, and `choices` gives interactive users a select list. Accepted: `true`/`false`, `yes`/`no`,
+`on`/`off` in lower, Title or UPPER case. Rejected before anything is written: `banana`, `1`, `0`,
+`y`, `tRuE`, an empty value, null. Answers are recorded as real booleans, so projects generated with
+the earlier `type: bool` questions keep working (tested). The rule lives in `copier.yml` only, so it
+holds for raw `copier` and for `devkit` alike; `tests/test_answer_types.py` enforces the form for
+every boolean question and exercises both the Python API and the real command line.
+
+## Hazards
+
+- **Booleans must use the strict form** (next section). A plain `type: bool` question would let
+  `--data zod=banana` enable the feature silently.
+- **Generated files must pass the project's own Prettier**, or `npm run check` fails for every
+  user of the feature.
+- **The default output is a contract.** Jinja whitespace mistakes silently change existing
+  projects' files on their next update; `tools/compare_release.py` catches them.
+- **Plain `copier update` takes the newest tag**, even a release outside what your tooling
+  supports; always pass `--vcs-ref`.

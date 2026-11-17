@@ -20,15 +20,21 @@ repository's commits, tags or uncommitted state.
 
 ## Refresh the dependency pins
 
-Pins live in `template/package.json.jinja` and `template/package-lock.json.jinja`.
+Versions are written in `template/package.json.jinja`. The reference lockfile is
+`locks/base.json`; every feature lockfile (`locks/<key>.json`) is derived from it
+(`docs/features.md`).
 
-1. Generate a sample app (above) and `npm ci` it.
+1. Generate a sample app (above) with no features and `npm ci` it.
 2. Change pins with `npm install --save-exact <package>@<version>`, choosing releases at least two
    weeks old, then `npm run check`.
-3. Copy the updated `dependencies`, `devDependencies` and the lockfile back into the two template
-   files, restoring `{{ app_name | to_json }}` for the name fields (two in the lockfile).
-4. `uv run pytest`: the render tests fail if a pin is not exact or the lockfile is out of sync, and
-   the end-to-end tests run `npm ci` and `npm run check`.
+3. Copy the updated `dependencies`, `devDependencies` into `template/package.json.jinja` (keeping
+   its `{% if %}` blocks) and the lockfile into `locks/base.json`, restoring
+   `{{ app_name | to_json }}` for the two name fields. If a feature has its own pin, change it in
+   `package.json.jinja` too.
+4. `uv run python tools/refresh_locks.py` regenerates every feature lockfile from the new base
+   (`--check` first to see what would change). It stops if a result is not strictly additive.
+5. `uv run pytest`: the tests fail if a pin is not exact, a lockfile is out of sync, orphaned or
+   not additive, and the end-to-end tests run `npm ci` and `npm run check` for every configuration.
 
 ## Release a version
 
@@ -36,7 +42,8 @@ Pins live in `template/package.json.jinja` and `template/package-lock.json.jinja
    major once stable. Breaking releases need a matching `developer-platform` release (its profile
    registry declares the supported range).
 2. Update `CHANGELOG.md` (move "Unreleased" under the new version).
-3. `uv run pytest` must pass in full.
+3. `uv run pytest` must pass in full, and `uv run python tools/compare_release.py <previous tag>`
+   must report that the default configuration is identical to the previous release.
 4. Commit, then tag the release commit with an annotated tag and push both:
 
    ```bash

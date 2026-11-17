@@ -47,8 +47,10 @@ def _npm(project: Path, *args: str) -> None:
         ({"app_description": NEUTRAL_DESCRIPTION}, "e2e-app"),
         ({"app_description": AWKWARD_DESCRIPTION}, "e2e-quoted-app"),
         ({"app_description": NEUTRAL_DESCRIPTION, "cache_components": False}, "e2e-plain-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True}, "e2e-zod-app"),
+        ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "cache_components": False}, "e2e-zod-plain-app"),
     ],
-    ids=["defaults", "awkward-description", "cache-components-off"],
+    ids=["defaults", "awkward-description", "cache-components-off", "zod", "zod-and-cache-components-off"],
 )
 def test_generated_app_installs_and_passes_the_validation_gate(
     template_repo: Path, tmp_path: Path, answers: dict, name: str
@@ -57,3 +59,13 @@ def test_generated_app_installs_and_passes_the_validation_gate(
     render(template_repo, project, app_name=name, **answers)
     _npm(project, "ci", "--no-audit", "--no-fund")
     _npm(project, "run", "check")
+    if answers.get("zod"):
+        # The feature's own tests must actually have run inside the gate: accepted and rejected input.
+        result = subprocess.run(
+            ["npm", "run", "-s", "test", "--", "src/lib/schemas", "--reporter=verbose"],
+            cwd=project, capture_output=True, text=True, timeout=300, check=False,
+        )  # fmt: skip
+        assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
+        assert "app-info.test.ts" in result.stdout
+        assert "accepts this application's own app-info.json" in result.stdout
+        assert result.stdout.count("rejects") >= 10

@@ -59,6 +59,14 @@ Then:
 
 Add only the components the app uses. Theme colors are the CSS variables in `src/app/globals.css`.
 
-## Template updates
+{% if zod %}## Validation (Zod)
+
+Shared [Zod](https://zod.dev) schemas live in `src/lib/schemas/` and are exported from
+`src/lib/schemas/index.ts`. `appInfoSchema` describes `src/lib/app-info.json` and is tested in
+`src/lib/schemas/app-info.test.ts`. Add one schema file and one test per input shape, export it
+from the index, and parse untrusted input with `safeParse` on the server; client-side checks are
+for UX only.
+
+{% endif %}## Template updates
 
 This project was generated from a [Copier](https://copier-org.github.io/copier/) template. `.copier-answers.yml` records the answers and template version; commit it and do not edit it by hand. See the template's documentation for how to pull in template updates.

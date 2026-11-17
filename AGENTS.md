@@ -30,7 +30,33 @@ a generated application; generated applications carry their own `AGENTS.md` from
 - No Copier `_tasks`, `_migrations` or `_jinja_extensions` without an explicit decision: they run
   code and force `--trust`. A test enforces this.
 - Validation belongs in `copier.yml` (it is the only place; there is no mirror to keep in sync).
-- A lockfile in `template/` must match `package.json` exactly; tests check this.
+- A lockfile must match `package.json` exactly for every supported configuration. Lockfiles live in
+  `locks/`, one per distinct npm dependency set; regenerate them with `tools/refresh_locks.py`, never by
+  hand, and never add resolution or install steps to generation.
+- A feature is a Copier question plus an entry in `features.yml` plus conditionally named files; follow
+  the checklist in `docs/features.md`. With every feature off, output must stay byte-identical to the
+  previous release (apart from `.copier-answers.yml`); run `tools/compare_release.py <tag>`.
+- New dependencies must be exact-pinned, at least two weeks old, and must not add install scripts.
+
+## Destructive commands
+
+An unscoped delete is only as safe as the path typed into it, so these are rules, not preferences:
+
+- **Never** run recursive or forced removal by hand (`rm -r`, `rm -rf`), `find ... -delete`,
+  `git clean`, `git reset --hard`, forced pushes or recursive `chmod`/`chown`. A test fails if any
+  appear in the repository's tools, tests, CI or documented shell snippets.
+- **Prefer not deleting.** Make a fresh, unique directory for every run (`mktemp -d`, Python's
+  `tempfile`, or pytest's `tmp_path`) instead of clearing and reusing one, and leave cleanup to the
+  operating system.
+- **If something must be removed,** ask first, and use the validated helper in the
+  `developer-platform` repository (`tools/scratch.py clean`), which deletes only paths provably
+  inside a workspace it created. Never write a literal system path, or a variable that might be
+  empty, after a delete command.
+- **Never hide a state-changing command's errors** (`2>/dev/null`); a failed delete must be visible.
+- **Tests of destructive behaviour use pure validators.** Never point anything that can delete at a
+  system path, not even one expected to be refused; test refusals with `assert_removable`.
+- Anything that would remove user data, a repository, a tag or a branch needs the user's explicit
+  approval first.
 
 ## Secure coding
 

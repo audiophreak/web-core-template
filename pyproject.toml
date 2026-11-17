@@ -20,6 +20,7 @@ python-downloads = "never"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tools"]
 addopts = "-ra"
 markers = [
   "e2e: generates a project and runs npm ci / npm run check (slow, needs network and Node 26)",

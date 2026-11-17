@@ -1,0 +1,11 @@
+# Registry of optional features. Tooling and tests read it; Copier does not.
+#
+# Each feature is a question of the same name in copier.yml. `requires` and `conflicts` are the
+# rules between features, and `npm: true` marks features that change package.json and so need
+# their own lockfile (locks/<key>.json). docs/features.md explains how to add a feature.
+features:
+  zod:
+    summary: Zod schema validation with a shared schema module in src/lib/schemas/
+    requires: []
+    conflicts: []
+    npm: true

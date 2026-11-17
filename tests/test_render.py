@@ -49,7 +49,8 @@ def test_metadata_is_substituted(generated_app: Path) -> None:
     assert (generated_app / ".nvmrc").read_text().strip() == "26"
 
 
-def test_dependencies_are_exact_and_lockfile_is_in_sync(generated_app: Path) -> None:
+def test_dependencies_are_exact_and_lockfile_is_in_sync(config_app) -> None:
+    _, generated_app = config_app
     package = json.loads((generated_app / "package.json").read_text())
     lock = json.loads((generated_app / "package-lock.json").read_text())
     assert lock["name"] == "sample-app" == lock["packages"][""]["name"]
@@ -87,7 +88,8 @@ def test_agent_instructions_are_included(generated_app: Path) -> None:
     assert "npm run check" in agents and "Secure coding" in agents
 
 
-def test_no_unrendered_template_syntax(generated_app: Path) -> None:
+def test_no_unrendered_template_syntax(config_app) -> None:
+    _, generated_app = config_app
     for path, text in _text_files(generated_app):
         assert "{{" not in text and "{%" not in text, path
         assert "_copier_conf" not in text, path
@@ -101,7 +103,8 @@ def _template_source_text() -> str:
     return "\n".join(parts)
 
 
-def test_no_references_to_other_applications_or_the_developer(generated_app: Path) -> None:
+def test_no_references_to_other_applications_or_the_developer(config_app) -> None:
+    _, generated_app = config_app
     # Never legitimate in a generated project.
     always_forbidden = {"my-first-app", "/Users/", str(Path.home())}
     # Machine identity values: a leak only if they appear in the output but NOT in the template
@@ -130,6 +133,8 @@ def test_answers_file_records_answers_and_source(generated_app: Path, template_r
     assert answers["app_name"] == "sample-app"
     assert answers["app_description"] == NEUTRAL_DESCRIPTION
     assert answers["cache_components"] is True
+    assert answers["zod"] is False
+    assert "lock_key" not in answers  # computed, never recorded
     assert answers["_src_path"] == str(template_repo)
     assert "_commit" in answers
 
