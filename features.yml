@@ -9,3 +9,8 @@ features:
     requires: []
     conflicts: []
     npm: true
+  forms:
+    summary: React Hook Form with the Zod resolver and a small accessible example form
+    requires: [zod]
+    conflicts: []
+    npm: true

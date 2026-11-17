@@ -36,9 +36,10 @@ Without `--vcs-ref`, Copier renders the newest tag. For template development use
 | `app_description`  | str  | `A Next.js application` | One line, up to 200 ASCII letters, digits and `. , ; : ! ? ' " ( ) / & + -`, starting with a letter, single spaces. |
 | `cache_components` | bool | `true`                  | Enables Next.js Cache Components with Partial Prefetching (`cacheComponents` and `partialPrefetching` in `next.config.ts`). Data fetching becomes dynamic by default and caching is opt-in. Next.js documents `partialPrefetching` as requiring `cacheComponents` and plans to make both universal in its next major release, so they are one switch here. |
 | `zod`              | bool | `false`                 | Adds Zod schema validation: the exact-pinned `zod` dependency, a shared schema module in `src/lib/schemas/` (`appInfoSchema` for `src/lib/app-info.json`) with tests that show accepted and rejected input, and matching README and `AGENTS.md` guidance. Off by default; with it off the output is identical to release 0.1.0 apart from `.copier-answers.yml`. |
+| `forms`            | bool | `false`                 | Adds React Hook Form with the Zod resolver: exact-pinned `react-hook-form` and `@hookform/resolvers`, a small accessible example form at `/forms-example` validated by a shared schema (`exampleFormSchema`), DOM-tested with `@testing-library/react` and `jsdom` (development only), and matching README and `AGENTS.md` guidance. **Requires `zod=true`**: `forms=true` without it is rejected before anything is written, and `forms` never enables Zod for you. The example saves and sends nothing. |
 
 Validation lives in `copier.yml`, so raw `copier copy` and any wrapper enforce the same rules.
-Invalid answers fail before anything is written. Features (`zod`) are optional and independent today;
+Invalid answers fail before anything is written. Features (`zod`, and `forms`, which requires `zod`) are optional;
 `docs/features.md` explains how they compose, how rules between them are enforced and how their
 lockfiles are maintained. Boolean answers are strict: `true`/`false`, `yes`/`no` and `on`/`off` (in
 lower, Title or UPPER case) are accepted; anything else (`banana`, `1`, `y`, an empty value) is

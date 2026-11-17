@@ -32,6 +32,11 @@ VALID = [
 INVALID = ["banana", "1", "0", "2", "", " ", "maybe", "tru", "truee", "null", "~", "y", "n", "tRuE", "yEs", 1, 0, 2, None]
 
 
+def prerequisites(name: str) -> dict[str, bool]:
+    """Answers a feature needs before its own answer can be judged (forms requires zod)."""
+    return {required: True for required in REGISTRY[name].requires} if name in REGISTRY else {}
+
+
 def recorded(project: Path, name: str):
     return yaml.safe_load((project / ".copier-answers.yml").read_text())[name]
 
@@ -56,7 +61,7 @@ def test_valid_booleans_are_accepted_and_recorded_as_real_booleans(
     template_repo: Path, tmp_path: Path, name: str, given: object, expected: bool
 ) -> None:
     project = tmp_path / "ok"
-    render(template_repo, project, **{name: given})
+    render(template_repo, project, **prerequisites(name), **{name: given})
     assert recorded(project, name) is expected
 
 
@@ -66,7 +71,7 @@ def test_invalid_booleans_are_rejected_before_anything_is_written(
     template_repo: Path, tmp_path: Path, name: str, given: object
 ) -> None:
     with pytest.raises(Exception, match=name):
-        render(template_repo, tmp_path / "no", **{name: given})
+        render(template_repo, tmp_path / "no", **prerequisites(name), **{name: given})
     assert not (tmp_path / "no").exists()
 
 
@@ -83,7 +88,7 @@ def _copier(template_repo: Path, destination: Path, *data: str) -> subprocess.Co
 def test_the_real_copier_command_line_rejects_invalid_booleans(
     template_repo: Path, tmp_path: Path, name: str, given: str
 ) -> None:
-    result = _copier(template_repo, tmp_path / "cli", f"{name}={given}")
+    result = _copier(template_repo, tmp_path / "cli", *[f"{r}=true" for r in prerequisites(name)], f"{name}={given}")
     assert result.returncode != 0
     assert name in result.stderr
     assert not (tmp_path / "cli").exists()
@@ -94,7 +99,7 @@ def test_the_real_copier_command_line_rejects_invalid_booleans(
 def test_the_real_copier_command_line_accepts_valid_booleans(
     template_repo: Path, tmp_path: Path, name: str, given: str, expected: bool
 ) -> None:
-    result = _copier(template_repo, tmp_path / "cli", f"{name}={given}")
+    result = _copier(template_repo, tmp_path / "cli", *[f"{r}=true" for r in prerequisites(name)], f"{name}={given}")
     assert result.returncode == 0, result.stderr
     assert recorded(tmp_path / "cli", name) is expected
 
@@ -114,7 +119,7 @@ def _legacy(copier_yml: str) -> str:
     for name in BOOLEAN_QUESTIONS:
         copier_yml, count = re.subn(
             r"  type: yaml  # a strict boolean[^\n]*\n(  default: (?:true|false)\n)  choices: \[false, true\]\n"
-            rf"  validator: >-\n    \{{% if {name} is not boolean %\}}Answer true or false\.\{{% endif %\}}\n",
+            rf"  validator: >-\n    \{{% if {name} is not boolean %\}}[^\n]*\n",
             r"  type: bool\n\1",
             copier_yml,
         )

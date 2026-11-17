@@ -1,0 +1,29 @@
+import { z } from "zod";
+
+/**
+ * Shape of the example form in `src/components/forms/example-form.tsx`.
+ *
+ * The form and any server code that receives the same data share this one schema, so the rules are
+ * written once. Server code must still parse untrusted input with `safeParse`; the form's checks
+ * are only for the person filling it in. The messages are shown to the user as written.
+ */
+export const exampleFormSchema = z.object({
+  name: z
+    .string()
+    .trim()
+    .min(2, "Enter your name (at least 2 characters)")
+    .max(80, "Use 80 characters or fewer"),
+  email: z
+    .string()
+    .trim()
+    .min(1, "Enter your email address")
+    .max(254, "Use 254 characters or fewer")
+    .pipe(z.email("Enter a valid email address")),
+  message: z
+    .string()
+    .trim()
+    .min(10, "Write at least 10 characters")
+    .max(1000, "Use 1000 characters or fewer"),
+});
+
+export type ExampleFormValues = z.infer<typeof exampleFormSchema>;

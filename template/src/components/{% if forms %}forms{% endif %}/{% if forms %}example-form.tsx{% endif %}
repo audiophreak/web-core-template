@@ -1,0 +1,128 @@
+"use client";
+
+import { zodResolver } from "@hookform/resolvers/zod";
+import { useState } from "react";
+import { useForm } from "react-hook-form";
+import { Button } from "@/components/ui/button";
+import { exampleFormSchema, type ExampleFormValues } from "@/lib/schemas";
+
+const fieldClass =
+  "w-full rounded-md border border-input bg-background px-3 py-2 text-sm aria-[invalid=true]:border-destructive";
+
+type ExampleFormProps = {
+  /**
+   * Called with the validated values. The example does nothing with them: this is where real
+   * handling would go, and the server must validate again with the same schema.
+   */
+  onValid?: (values: ExampleFormValues) => void | Promise<void>;
+};
+
+export function ExampleForm({ onValid }: ExampleFormProps) {
+  const [submittedName, setSubmittedName] = useState<string | null>(null);
+  const {
+    register,
+    handleSubmit,
+    reset,
+    formState: { errors, isSubmitting },
+  } = useForm<ExampleFormValues>({
+    resolver: zodResolver(exampleFormSchema),
+    defaultValues: { name: "", email: "", message: "" },
+  });
+
+  async function submit(values: ExampleFormValues) {
+    setSubmittedName(null);
+    await onValid?.(values);
+    setSubmittedName(values.name);
+    reset();
+  }
+
+  // The attributes that tie a field to its error message for assistive technology.
+  function describe(field: keyof ExampleFormValues) {
+    const invalid = errors[field] !== undefined;
+    return {
+      id: `example-${field}`,
+      "aria-invalid": invalid || undefined,
+      "aria-describedby": invalid ? `example-${field}-error` : undefined,
+    };
+  }
+
+  function error(field: keyof ExampleFormValues) {
+    const message = errors[field]?.message;
+    return message ? (
+      <p
+        id={`example-${field}-error`}
+        role="alert"
+        className="text-sm text-destructive"
+      >
+        {message}
+      </p>
+    ) : null;
+  }
+
+  return (
+    <form
+      noValidate
+      onSubmit={handleSubmit(submit)}
+      aria-describedby="example-form-notice"
+      className="flex flex-col gap-4"
+    >
+      <p id="example-form-notice" className="text-sm text-muted-foreground">
+        This is an example. Nothing you enter is saved or sent anywhere.
+      </p>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="example-name" className="text-sm font-medium">
+          Name
+        </label>
+        <input
+          type="text"
+          autoComplete="name"
+          className={fieldClass}
+          {...describe("name")}
+          {...register("name")}
+        />
+        {error("name")}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="example-email" className="text-sm font-medium">
+          Email address
+        </label>
+        <input
+          type="email"
+          autoComplete="email"
+          className={fieldClass}
+          {...describe("email")}
+          {...register("email")}
+        />
+        {error("email")}
+      </div>
+
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="example-message" className="text-sm font-medium">
+          Message
+        </label>
+        <textarea
+          rows={4}
+          className={fieldClass}
+          {...describe("message")}
+          {...register("message")}
+        />
+        {error("message")}
+      </div>
+
+      <Button type="submit" disabled={isSubmitting} aria-busy={isSubmitting}>
+        {isSubmitting ? "Submitting…" : "Submit"}
+      </Button>
+
+      <div role="status" aria-live="polite">
+        {submittedName ? (
+          <p className="text-sm font-medium">
+            Thanks, {submittedName}. Your input is valid. Nothing was saved or
+            sent.
+          </p>
+        ) : null}
+      </div>
+    </form>
+  );
+}

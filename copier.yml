@@ -65,10 +65,18 @@ zod:
     {% if zod is not boolean %}Answer true or false.{% endif %}
   help: "Add Zod schema validation? (adds the exact-pinned `zod` dependency, a shared schema module in src/lib/schemas/ and its tests)"
 
+forms:
+  type: yaml  # a strict boolean: see the note above the questions
+  default: false
+  choices: [false, true]
+  validator: >-
+    {% if forms is not boolean %}Answer true or false.{% elif forms and not zod %}forms requires zod: answer zod=true as well (forms is never enabled for you).{% endif %}
+  help: "Add React Hook Form? (requires zod; adds exact-pinned react-hook-form and @hookform/resolvers, a small example form at /forms-example validated by a shared schema, and DOM test libraries as dev dependencies)"
+
 # Computed: never asked and never recorded. Selects the lockfile that matches the selected
 # dependencies. It must agree with tools/features.py; a test renders every valid configuration
 # and checks that the lockfile it receives is the one that module names.
 lock_key:
   type: str
   when: false
-  default: "{{ 'zod' if zod else 'base' }}"
+  default: "{{ 'forms+zod' if forms else ('zod' if zod else 'base') }}"

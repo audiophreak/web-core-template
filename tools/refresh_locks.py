@@ -15,8 +15,10 @@ How each lockfile is produced (see docs/features.md):
    need (`npm install --package-lock-only --ignore-scripts`). `--before` makes npm ignore any
    release newer than the cutoff (default: two weeks ago), keeping the supply-chain age rule
    for new transitive packages.
-3. The result must be purely additive: every package in the base lock must appear unchanged
-   (same version, source and integrity). Otherwise the tool stops without writing.
+3. The result must be purely additive: every package version in the base lock must still be
+   present with the same source and integrity, and direct dependencies must not change at all.
+   npm may re-hoist (move) an existing version to a nested folder; that is reported, not an error.
+   Otherwise the tool stops without writing.
 4. The project name is turned back into the template placeholder and the file is written.
 
 locks/base.json itself is the reference. It is changed by the "refresh the dependency pins"
@@ -95,23 +97,44 @@ def to_template(lock_text: str) -> str:
     return "\n".join(lines)
 
 
-def check_additive(base: dict, new: dict, key: str) -> None:
-    changed = []
+def package_name(path: str) -> str:
+    return path.rsplit("node_modules/", 1)[-1]
+
+
+def identity(entry: dict) -> tuple:
+    return (entry.get("version"), entry.get("resolved"), entry.get("integrity"))
+
+
+def check_additive(base: dict, new: dict, key: str) -> list[str]:
+    """Every dependency of the base lock must survive unchanged; returns the relocations.
+
+    npm hoists the most widely used version of a package to the top level, so adding packages can
+    move an existing version to a nested folder (and another up), which changes paths but no
+    version. What must never change is which versions are installed: every (name, version, source,
+    integrity) of the base lock must still be present, and each direct dependency must stay at the
+    same path with the same version.
+    """
+    present: dict[str, set[tuple]] = {}
+    for path, entry in new["packages"].items():
+        if path:
+            present.setdefault(package_name(path), set()).add(identity(entry))
+    changed, relocated = [], []
     for path, entry in base["packages"].items():
         if path == "":
             continue
-        other = new["packages"].get(path)
-        if other is None:
-            changed.append(f"{path}: removed")
-            continue
-        for field in ("version", "resolved", "integrity"):
-            if entry.get(field) != other.get(field):
-                changed.append(f"{path}: {field} changed")
+        if identity(entry) not in present.get(package_name(path), set()):
+            changed.append(f"{path}: {entry.get('version')} is no longer in the lock")
+        elif path not in new["packages"] or identity(new["packages"][path]) != identity(entry):
+            relocated.append(path)
+    root = base["packages"][""]
+    for name in sorted({*root.get("dependencies", {}), *root.get("devDependencies", {})}):
+        path = f"node_modules/{name}"
+        if identity(new["packages"].get(path, {})) != identity(base["packages"][path]):
+            changed.append(f"{path}: a direct dependency changed or moved")
     if changed:
         shown = "\n  ".join(changed[:10])
-        raise ToolError(
-            f"lock {key!r} is not additive over the base lock ({len(changed)} change(s)):\n  {shown}"
-        )
+        raise ToolError(f"lock {key!r} is not additive over the base lock ({len(changed)} change(s)):\n  {shown}")
+    return relocated
 
 
 def build_lock(key: str, selection: frozenset[str], registry, before: str) -> str:
@@ -144,7 +167,9 @@ def build_lock(key: str, selection: frozenset[str], registry, before: str) -> st
             text=True,
         )  # fmt: skip
         result_text = (project / "package-lock.json").read_text(encoding="utf-8")
-        check_additive(starting, json.loads(result_text), key)
+        relocated = check_additive(starting, json.loads(result_text), key)
+        if relocated:
+            print(f"{key}: npm re-hoisted {len(relocated)} existing package location(s); no version changed")
         return to_template(result_text)
 
 

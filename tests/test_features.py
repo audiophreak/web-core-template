@@ -36,9 +36,12 @@ def sel(*names: str) -> frozenset[str]:
 # ----------------------------------------------------------------------- the real registry
 
 
-def test_the_real_registry_is_valid_and_lists_zod() -> None:
-    assert sorted(REGISTRY) == ["zod"]
+def test_the_real_registry_is_valid_and_lists_zod_and_forms() -> None:
+    assert sorted(REGISTRY) == ["forms", "zod"]
     assert REGISTRY["zod"].npm is True and REGISTRY["zod"].summary
+    assert REGISTRY["forms"].npm is True and REGISTRY["forms"].summary
+    assert REGISTRY["forms"].requires == ("zod",) and REGISTRY["forms"].conflicts == ()
+    assert REGISTRY["zod"].requires == ()
 
 
 def test_every_feature_is_a_strict_boolean_copier_question_that_defaults_to_off() -> None:
@@ -63,11 +66,13 @@ def test_feature_rules_are_mirrored_by_validators_in_copier_yml() -> None:
 
 
 def test_the_supported_matrix_of_the_real_registry() -> None:
-    assert [sorted(c) for c in f.configurations(REGISTRY)] == [[], ["zod"]]
+    assert [sorted(c) for c in f.configurations(REGISTRY)] == [[], ["zod"], ["forms", "zod"]]
     assert {k: [sorted(c) for c in v] for k, v in f.lock_keys(REGISTRY).items()} == {
         "base": [[]],
         "zod": [["zod"]],
+        "forms+zod": [["forms", "zod"]],
     }
+    assert f.problems(frozenset({"forms"}), REGISTRY) == ["forms requires zod"]
 
 
 def test_the_lockfile_matrix_stays_small() -> None:

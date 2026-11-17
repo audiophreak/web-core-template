@@ -4,6 +4,19 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`). In 0.x, a minor bump may be breaki
 
 ## Unreleased
 
+- New optional feature **`forms`** (default off, requires `zod`): React Hook Form with the Zod resolver,
+  a small accessible example form at `/forms-example` validated by a shared schema in
+  `src/lib/schemas/example-form.ts`, and tests that run inside `npm run check` in a DOM environment
+  (`jsdom`, per test file). Exact pins: `react-hook-form` 7.91.0, `@hookform/resolvers` 5.9.2;
+  development: `@testing-library/react` 16.3.3, `@testing-library/dom` 10.4.2, `jsdom` 30.1.3. The
+  example saves and sends nothing. `forms=true` without `zod=true` is rejected before anything is
+  written. New lockfile `locks/forms+zod.json` (adds 47 packages, none with install scripts, all
+  permissively licensed). With `forms` off, output is unchanged: default and `zod` projects are
+  byte-identical to v0.2.0 apart from the documented `.prettierignore` line below.
+- `tools/refresh_locks.py` judges "additive" by package identity (name, version, source, integrity)
+  instead of by folder, because npm may re-hoist an existing version when packages are added; changed,
+  removed or moved direct dependencies still fail.
+
 - Generated projects no longer let Prettier check Copier's `.copier-answers.yml` (root file only, via
   `.prettierignore`). When the template is rendered from an untagged commit, Copier records the
   abbreviated hash as `_commit`; an all-digit hash is serialized single-quoted, which Prettier rejects,
