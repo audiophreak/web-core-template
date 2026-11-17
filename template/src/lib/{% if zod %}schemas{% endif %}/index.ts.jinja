@@ -1,3 +1,4 @@
 export { appInfoSchema, type AppInfo } from "./app-info";
 {% if forms %}export { exampleFormSchema, type ExampleFormValues } from "./example-form";
+{% endif %}{% if rest_api %}export * as v1 from "./v1";
 {% endif %}

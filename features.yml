@@ -14,3 +14,8 @@ features:
     requires: [zod]
     conflicts: []
     npm: true
+  rest_api:
+    summary: Versioned REST API v1 route handlers with shared Zod contracts and RFC 9457 problem-details errors
+    requires: [zod]
+    conflicts: []
+    npm: false

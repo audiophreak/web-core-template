@@ -36,8 +36,10 @@ def sel(*names: str) -> frozenset[str]:
 # ----------------------------------------------------------------------- the real registry
 
 
-def test_the_real_registry_is_valid_and_lists_zod_and_forms() -> None:
-    assert sorted(REGISTRY) == ["forms", "zod"]
+def test_the_real_registry_is_valid_and_lists_zod_forms_and_rest_api() -> None:
+    assert sorted(REGISTRY) == ["forms", "rest_api", "zod"]
+    api = REGISTRY["rest_api"]
+    assert api.requires == ("zod",) and api.conflicts == () and api.npm is False and api.summary
     assert REGISTRY["zod"].npm is True and REGISTRY["zod"].summary
     assert REGISTRY["forms"].npm is True and REGISTRY["forms"].summary
     assert REGISTRY["forms"].requires == ("zod",) and REGISTRY["forms"].conflicts == ()
@@ -66,13 +68,22 @@ def test_feature_rules_are_mirrored_by_validators_in_copier_yml() -> None:
 
 
 def test_the_supported_matrix_of_the_real_registry() -> None:
-    assert [sorted(c) for c in f.configurations(REGISTRY)] == [[], ["zod"], ["forms", "zod"]]
+    assert [sorted(c) for c in f.configurations(REGISTRY)] == [
+        [],
+        ["zod"],
+        ["forms", "zod"],
+        ["rest_api", "zod"],
+        ["forms", "rest_api", "zod"],
+    ]
+    # rest_api changes no npm dependency, so it shares the lock of the configuration without it
     assert {k: [sorted(c) for c in v] for k, v in f.lock_keys(REGISTRY).items()} == {
         "base": [[]],
-        "zod": [["zod"]],
-        "forms+zod": [["forms", "zod"]],
+        "zod": [["zod"], ["rest_api", "zod"]],
+        "forms+zod": [["forms", "zod"], ["forms", "rest_api", "zod"]],
     }
     assert f.problems(frozenset({"forms"}), REGISTRY) == ["forms requires zod"]
+    assert f.problems(frozenset({"rest_api"}), REGISTRY) == ["rest_api requires zod"]
+    assert f.problems(frozenset({"forms", "rest_api"}), REGISTRY) == ["forms requires zod", "rest_api requires zod"]
 
 
 def test_the_lockfile_matrix_stays_small() -> None:

@@ -40,7 +40,12 @@ The application's requirements are not defined yet. Do not introduce architectur
   the trust boundary.{% if forms %}
 - Build forms with React Hook Form and `zodResolver`, using the shared schema as the single source
   of the rules (see `src/components/forms/example-form.tsx`). Keep labels, `aria-invalid` and
-  error messages linked, and test with a DOM environment (`// @vitest-environment jsdom`).{% endif %}{% endif %}
+  error messages linked, and test with a DOM environment (`// @vitest-environment jsdom`).{% endif %}{% if rest_api %}
+- API v1 is additive-only: add optional fields, endpoints or error codes, never rename, remove or
+  tighten anything (that needs `/api/v2`). Put each request and response shape in
+  `src/lib/schemas/v1/`, `safeParse` every input, validate every response against its schema, and
+  report errors with `problem()` from `src/server/api/responses.ts`. Server code stays in
+  `src/server/` and `src/app/api/`; a test fails if a client component reaches it. See `docs/api-v1.md`.{% endif %}{% endif %}
 - Enforce authorization on the server, close to the data, never only in the UI.
 - Keep secrets in environment variables; never commit them, log them, or expose them to
   the browser (only `NEXT_PUBLIC_*` variables reach the client — never put secrets there).

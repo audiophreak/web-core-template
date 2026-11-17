@@ -76,6 +76,16 @@ rules are written once and the form's types come from the schema. The form is in
 save or send anything: pass `onValid` to handle the values, validate again with the same schema on
 the server, then delete the example page.
 
+{% endif %}{% if rest_api %}## REST API (v1)
+
+Versioned route handlers live in `src/app/api/v1/`, their request and response schemas in
+`src/lib/schemas/v1/` (importable by clients) and the server-only helpers in `src/server/api/`.
+`GET /api/v1/app-info` returns the application's name and description, and `POST
+/api/v1/examples/validate` is the pattern for an endpoint that accepts input. Errors are RFC 9457
+problem details (`application/problem+json`) with stable `code` values. Paths, schemas, status codes,
+the error format and the versioning rules are in `docs/api-v1.md`. Handlers are tested by calling
+them with `Request` objects, so `npm run check` needs no running server.
+
 {% endif %}{% endif %}## Template updates
 
 This project was generated from a [Copier](https://copier-org.github.io/copier/) template. `.copier-answers.yml` records the answers and template version; commit it and do not edit it by hand. See the template's documentation for how to pull in template updates.

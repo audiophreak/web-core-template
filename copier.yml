@@ -73,6 +73,14 @@ forms:
     {% if forms is not boolean %}Answer true or false.{% elif forms and not zod %}forms requires zod: answer zod=true as well (forms is never enabled for you).{% endif %}
   help: "Add React Hook Form? (requires zod; adds exact-pinned react-hook-form and @hookform/resolvers, a small example form at /forms-example validated by a shared schema, and DOM test libraries as dev dependencies)"
 
+rest_api:
+  type: yaml  # a strict boolean: see the note above the questions
+  default: false
+  choices: [false, true]
+  validator: >-
+    {% if rest_api is not boolean %}Answer true or false.{% elif rest_api and not zod %}rest_api requires zod: answer zod=true as well (rest_api is never enabled for you).{% endif %}
+  help: "Add the versioned REST API? (requires zod; adds route handlers under /api/v1 with shared Zod contracts in src/lib/schemas/v1/, RFC 9457 problem-details errors and handler tests; adds no npm dependencies)"
+
 # Computed: never asked and never recorded. Selects the lockfile that matches the selected
 # dependencies. It must agree with tools/features.py; a test renders every valid configuration
 # and checks that the lockfile it receives is the one that module names.
