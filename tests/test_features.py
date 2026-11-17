@@ -36,8 +36,11 @@ def sel(*names: str) -> frozenset[str]:
 # ----------------------------------------------------------------------- the real registry
 
 
-def test_the_real_registry_is_valid_and_lists_zod_forms_and_rest_api() -> None:
-    assert sorted(REGISTRY) == ["forms", "rest_api", "zod"]
+def test_the_real_registry_is_valid_and_lists_zod_forms_rest_api_and_database() -> None:
+    assert sorted(REGISTRY) == ["database", "forms", "rest_api", "zod"]
+    database = REGISTRY["database"]
+    assert database.choices == ("postgres", "supabase") and database.requires == ("zod",) and database.conflicts == ()
+    assert database.npm is True and database.summary
     api = REGISTRY["rest_api"]
     assert api.requires == ("zod",) and api.conflicts == () and api.npm is False and api.summary
     assert REGISTRY["zod"].npm is True and REGISTRY["zod"].summary
@@ -49,12 +52,21 @@ def test_the_real_registry_is_valid_and_lists_zod_forms_and_rest_api() -> None:
 def test_every_feature_is_a_strict_boolean_copier_question_that_defaults_to_off() -> None:
     """Strict form: see the note in copier.yml and tests/test_answer_types.py."""
     questions = yaml.safe_load((TEMPLATE_ROOT / "copier.yml").read_text())
-    for feature_id in REGISTRY:
+    for feature_id in (name for name, feature in REGISTRY.items() if not feature.choices):
         question = questions[feature_id]
         assert question["type"] == "yaml" and question["choices"] == [False, True], feature_id
         assert f"{feature_id} is not boolean" in question["validator"], feature_id
         assert question["default"] is False, feature_id
         assert question.get("help"), f"{feature_id} needs help text"
+
+
+def test_every_choice_feature_is_a_closed_choice_question_that_defaults_to_none() -> None:
+    questions = yaml.safe_load((TEMPLATE_ROOT / "copier.yml").read_text())
+    for feature_id in (name for name, feature in REGISTRY.items() if feature.choices):
+        question = questions[feature_id]
+        assert question["type"] == "str" and question["default"] == f.NONE, feature_id
+        assert question["choices"] == [f.NONE, *REGISTRY[feature_id].choices], feature_id  # exactly the registry's values
+        assert question.get("help") and "requires" in question["validator"], feature_id
 
 
 def test_feature_rules_are_mirrored_by_validators_in_copier_yml() -> None:
@@ -71,19 +83,36 @@ def test_the_supported_matrix_of_the_real_registry() -> None:
     assert [sorted(c) for c in f.configurations(REGISTRY)] == [
         [],
         ["zod"],
+        ["database=postgres", "zod"],
+        ["database=supabase", "zod"],
         ["forms", "zod"],
         ["rest_api", "zod"],
+        ["database=postgres", "forms", "zod"],
+        ["database=postgres", "rest_api", "zod"],
+        ["database=supabase", "forms", "zod"],
+        ["database=supabase", "rest_api", "zod"],
         ["forms", "rest_api", "zod"],
+        ["database=postgres", "forms", "rest_api", "zod"],
+        ["database=supabase", "forms", "rest_api", "zod"],
     ]
-    # rest_api changes no npm dependency, so it shares the lock of the configuration without it
+    # rest_api changes no npm dependency, so it shares the lock of the configuration without it; the two
+    # database providers need different packages (only Supabase adds its CLI), so they have their own locks
     assert {k: [sorted(c) for c in v] for k, v in f.lock_keys(REGISTRY).items()} == {
         "base": [[]],
         "zod": [["zod"], ["rest_api", "zod"]],
+        "database-postgres+zod": [["database=postgres", "zod"], ["database=postgres", "rest_api", "zod"]],
+        "database-supabase+zod": [["database=supabase", "zod"], ["database=supabase", "rest_api", "zod"]],
         "forms+zod": [["forms", "zod"], ["forms", "rest_api", "zod"]],
+        "database-postgres+forms+zod": [["database=postgres", "forms", "zod"], ["database=postgres", "forms", "rest_api", "zod"]],
+        "database-supabase+forms+zod": [["database=supabase", "forms", "zod"], ["database=supabase", "forms", "rest_api", "zod"]],
     }
     assert f.problems(frozenset({"forms"}), REGISTRY) == ["forms requires zod"]
     assert f.problems(frozenset({"rest_api"}), REGISTRY) == ["rest_api requires zod"]
     assert f.problems(frozenset({"forms", "rest_api"}), REGISTRY) == ["forms requires zod", "rest_api requires zod"]
+    assert f.problems(frozenset({"database=postgres"}), REGISTRY) == ["database requires zod"]
+    assert f.problems(frozenset({"database=oracle", "zod"}), REGISTRY) == ["'database=oracle' is not a valid selection of database"]
+    assert f.problems(frozenset({"database", "zod"}), REGISTRY) == ["'database' is not a valid selection of database"]
+    assert f.problems(frozenset({"database=postgres", "database=supabase", "zod"}), REGISTRY) == ["a feature is selected more than once"]
 
 
 def test_the_lockfile_matrix_stays_small() -> None:

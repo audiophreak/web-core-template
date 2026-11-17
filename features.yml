@@ -19,3 +19,9 @@ features:
     requires: [zod]
     conflicts: []
     npm: false
+  database:
+    summary: A PostgreSQL database with version-controlled SQL migrations and a typed server-only data-access layer, run locally with Docker (postgres) or the Supabase CLI (supabase)
+    choices: [postgres, supabase]
+    requires: [zod]
+    conflicts: []
+    npm: true
