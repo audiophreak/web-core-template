@@ -63,13 +63,21 @@ appears in `junit.xml` and the summary with its reason.
 - Reports are produced by pytest, `npm` and a few shell lines that write named fields. **Nothing dumps
   the environment**, and JUnit logging is off. Gate output can quote project files, so treat the
   artifacts as repository-internal (in a private repository, visible to those who can read it).
-- Before upload, the reports are scanned for token-shaped strings; a hit fails the job and skips the
-  upload.
+- Before upload, the reports are scanned for token-shaped strings (GitHub tokens, private-key
+  headers, AWS key ids) with a **quiet** `grep -q`: the matching text is never printed. A hit, or a
+  scan that cannot run, fails the job with a generic error and **skips the upload**. The job summary
+  is written only after the scan passes. A regression test runs the workflow's own scan on fake
+  credentials in a disposable directory and checks that it rejects them without printing them.
 - `tests/test_ci_workflow.py` fails if the workflow stops uploading on failure, drops the scan, widens
   the artifact path, extends retention beyond 30 days, adds a credential or dumps the environment.
 
 ## Limitations
 
+- **The scan protects the artifact, not the log.** Test output is shown live in the job log while
+  pytest runs (`tee`), before any scan can run; a secret that a test prints would be in that log
+  regardless. GitHub masks only secrets it knows (registered secrets), and this project stores none.
+  The rule is: tests must never print credentials. The scan is a backstop for the uploaded files.
+- The scan recognizes a few common shapes, not every secret, and does not decode or unpack anything.
 - Evidence, not attestation: whoever can change the workflow can change what it reports, and nothing
   signs the artifacts. Branch protection (not enabled) would require review of workflow changes.
 - Artifacts expire after 30 days; keep a copy of what a release record needs.

@@ -66,8 +66,23 @@ jobs:
             echo "locks_zod_sha256=$(sha256sum locks/zod.json | cut -d' ' -f1)"
           } > reports/metadata.txt
           uv pip freeze --exclude-editable > reports/installed-packages.txt
-      - name: Summarize results
+      - name: Check reports contain no token-shaped strings
+        id: scan
         if: always()
+        shell: bash
+        run: |
+          # -q: matching text is never printed, to the log or anywhere else. Only the status is used.
+          status=0
+          grep -r -q -E 'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}' reports || status=$?
+          if [ "$status" -eq 0 ]; then
+            echo "::error::a token-shaped string was found in reports/; the artifact upload is skipped"
+            exit 1
+          elif [ "$status" -ne 1 ]; then
+            echo "::error::the report scan could not run; the artifact upload is skipped"
+            exit 1
+          fi
+      - name: Summarize results
+        if: always() && steps.scan.outcome == 'success'
         shell: bash
         run: |
           {
@@ -83,15 +98,6 @@ jobs:
             echo
             echo "Downloadable artifact: junit.xml, pytest-output.txt, metadata.txt, installed-packages.txt, generated-apps/ (see docs/ci-evidence.md)."
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Check reports contain no token-shaped strings
-        id: scan
-        if: always()
-        shell: bash
-        run: |
-          if [ -d reports ] && grep -r -n -E 'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}' reports; then
-            echo "::error::a token-shaped string is in reports/; the artifact upload is skipped"
-            exit 1
-          fi
       - name: Upload test reports
         if: always() && steps.scan.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

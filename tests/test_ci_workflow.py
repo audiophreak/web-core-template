@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 from pathlib import Path
 
 import yaml
@@ -84,7 +85,7 @@ def test_node_comes_from_the_templates_own_pin() -> None:
 
 # ------------------------------------------------------------------ evidence (docs/ci-evidence.md)
 
-REPORT_STEPS = ("Record run metadata", "Summarize results", "Check reports contain no token-shaped strings", "Upload test reports")
+REPORT_STEPS = ("Record run metadata", "Check reports contain no token-shaped strings", "Summarize results", "Upload test reports")
 
 
 def _job() -> dict:
@@ -151,6 +152,53 @@ def test_reports_are_scanned_for_tokens_before_upload_and_a_hit_blocks_the_uploa
     for shape in ("gh[pousr]_", "github_pat_", "PRIVATE KEY", "AKIA"):
         assert shape in scan["run"], shape
     assert upload["if"] == "always() && steps.scan.outcome == 'success'"
+    # Nothing derived from the reports may reach the run page before the scan has passed.
+    assert _step("Summarize results")["if"] == "always() && steps.scan.outcome == 'success'"
+
+
+def test_the_scan_never_prints_what_it_matches() -> None:
+    script = _step("Check reports contain no token-shaped strings")["run"]
+    grep = re.search(r"^\s*grep (.*)$", script, re.MULTILINE)
+    assert grep, "the scan must use grep"
+    flags = grep[1].split(" '", 1)[0].split()
+    assert "-q" in flags, "grep must be quiet so matching text is never printed"
+    assert not {"-n", "-o", "-H", "-A", "-B", "-C", "--only-matching", "--line-number"} & set(flags)
+    assert not re.search(r"\b(cat|head|tail|sed|awk|echo \"?\$\(|tee)\b[^\n]*reports", script)  # no other reader of reports/
+    assert script.count("::error::") == 2 and all("$" not in line for line in script.splitlines() if "::error::" in line)
+
+
+def test_the_scan_rejects_a_credential_shaped_string_without_printing_it(tmp_path: Path) -> None:
+    """Runs the workflow's own scan script, in a disposable directory, on fake credential-shaped data."""
+    script = _step("Check reports contain no token-shaped strings")["run"]
+    fakes = {
+        "github-token": "ghp_" + "Zx9Q" * 9,
+        "fine-grained": "github_pat_" + "Ab1_" * 8,
+        "aws-key-id": "AKIA" + "QWERTY0123456789"[:16],
+        "private-key": "-----BEGIN RSA PRIVATE KEY-----",
+    }
+
+    def run(workspace: Path) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["bash", "-e", "-o", "pipefail", "-c", script], cwd=workspace, capture_output=True, text=True, check=False)
+
+    clean = tmp_path / "clean"
+    (clean / "reports").mkdir(parents=True)
+    (clean / "reports" / "pytest-output.txt").write_text("231 passed, 9 skipped\n", encoding="utf-8")
+    assert run(clean).returncode == 0
+
+    for name, fake in fakes.items():
+        workspace = tmp_path / name
+        (workspace / "reports" / "generated-apps").mkdir(parents=True)
+        (workspace / "reports" / "generated-apps" / "app.check.txt").write_text(f"line one\nleaked {fake} here\n", encoding="utf-8")
+        result = run(workspace)
+        assert result.returncode == 1, name
+        output = result.stdout + result.stderr
+        assert "::error::" in output, name
+        assert fake not in output and fake[:12] not in output, f"{name}: the matching text was printed"
+        assert "leaked" not in output, f"{name}: surrounding report text was printed"
+
+    missing = tmp_path / "no-reports"
+    missing.mkdir()
+    assert run(missing).returncode == 1  # a scan that cannot run fails closed
 
 
 def test_the_artifact_is_unique_per_python_and_commit_bounded_and_fails_if_empty() -> None:
