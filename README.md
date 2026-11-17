@@ -63,7 +63,7 @@ features.yml      registry of optional features (rules between them, which chang
 locks/            one committed lockfile per distinct npm dependency set (never rendered itself)
 tools/            features.py (the supported matrix), refresh_locks.py and compare_release.py
 tests/            render, validation, versioned-source, upgrade and end-to-end tests
-docs/             features.md, maintaining.md, upgrading.md, provenance.md
+docs/             features.md, maintaining.md, upgrading.md, provenance.md, ci-evidence.md
 pyproject.toml    exact-pinned Copier and pytest for the test environment (uv.lock)
 AGENTS.md         rules for AI agents working on this repository
 ```

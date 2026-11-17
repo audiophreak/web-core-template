@@ -4,6 +4,9 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
+# CI evidence written by the test step (uploaded as an artifact, never committed)
+reports/
+
 # macOS
 .DS_Store
 

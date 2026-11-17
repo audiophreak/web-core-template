@@ -2,6 +2,14 @@
 
 Versions are git tags (`vMAJOR.MINOR.PATCH`). In 0.x, a minor bump may be breaking.
 
+## Unreleased
+
+- CI now uploads downloadable test evidence for every run and Python version, including failed runs:
+  JUnit XML, the console record, run metadata tied to the commit under test, installed package
+  versions, and for each generated app in the end-to-end tests its gate output and production
+  `npm audit` result (`docs/ci-evidence.md`). The exit code is unchanged. The token-shaped-string scan is quiet (matches are never printed) and gates both the job summary and the upload. Template output is
+  unchanged; no release is implied.
+
 ## 0.2.0
 
 Optional features, starting with Zod. Additive: with every feature off, the output is byte-identical
