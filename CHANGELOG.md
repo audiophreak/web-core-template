@@ -2,7 +2,7 @@
 
 Versions are git tags (`vMAJOR.MINOR.PATCH`). In 0.x, a minor bump may be breaking.
 
-## 0.2.0 (unreleased)
+## 0.2.0
 
 Optional features, starting with Zod. Additive: with every feature off, the output is byte-identical
 to 0.1.0 apart from `.copier-answers.yml` (which gains `zod: false`).
