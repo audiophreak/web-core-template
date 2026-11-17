@@ -3,17 +3,16 @@
 from __future__ import annotations
 
 import re
-import shutil
 from pathlib import Path
 
 import pytest
 import yaml
 
 import features as f
-from conftest import CONFIGURATIONS, REGISTRY, TEMPLATE_ROOT, render, run_git
+from conftest import CONFIGURATIONS, REGISTRY, TEMPLATE_ROOT, render
 from test_answer_types import _copier
 
-API = "rest-api"
+API = "rest_api"
 SCHEMAS = "src/lib/schemas"
 FEATURE_FILES = {
     "docs/api-v1.md",
@@ -47,7 +46,7 @@ SPELLINGS_TRUE = ["true", "True", "TRUE", "yes", "Yes", "YES", "on", "On", "ON"]
 @pytest.fixture(scope="module")
 def apps(template_repo: Path, tmp_path_factory: pytest.TempPathFactory) -> dict[str, Path]:
     """The same application name everywhere, so only the selected features differ."""
-    root = tmp_path_factory.mktemp("rest-api")
+    root = tmp_path_factory.mktemp("rest_api")
     chosen = {
         "default": {},
         "zod": {"zod": True},
@@ -86,12 +85,12 @@ def test_the_schema_index_is_byte_identical_to_v0_3_0_when_the_api_is_off(apps) 
     assert (apps["forms"] / SCHEMAS / "index.ts").read_text() == FORMS_INDEX
 
 
-# ------------------------------------------------------------------ the rule: rest-api requires zod
+# ------------------------------------------------------------------ the rule: rest_api requires zod
 
 
 @pytest.mark.parametrize("answers", [{API: True}, {API: True, "zod": False}, {API: "yes"}, {API: "ON"}, {API: True, "forms": False}], ids=str)
 def test_the_api_without_zod_is_rejected_before_anything_is_written(template_repo: Path, tmp_path: Path, answers: dict) -> None:
-    with pytest.raises(Exception, match="rest-api requires zod"):
+    with pytest.raises(Exception, match="rest_api requires zod"):
         render(template_repo, tmp_path / "no", **answers)
     assert not (tmp_path / "no").exists()
 
@@ -99,7 +98,7 @@ def test_the_api_without_zod_is_rejected_before_anything_is_written(template_rep
 @pytest.mark.parametrize("given", SPELLINGS_TRUE)
 def test_every_true_spelling_is_rejected_without_zod_through_the_real_command_line(template_repo: Path, tmp_path: Path, given: str) -> None:
     result = _copier(template_repo, tmp_path / "cli", f"{API}={given}")
-    assert result.returncode != 0 and "rest-api requires zod" in result.stderr
+    assert result.returncode != 0 and "rest_api requires zod" in result.stderr
     assert not (tmp_path / "cli").exists()
 
 
@@ -116,38 +115,28 @@ def test_the_api_never_turns_zod_on_by_itself(template_repo: Path, tmp_path: Pat
     render(template_repo, project, zod=True)  # zod alone leaves the API off
     answers = yaml.safe_load((project / ".copier-answers.yml").read_text())
     assert (answers["zod"], answers[API]) == (True, False)
-    with pytest.raises(Exception, match="rest-api requires zod"):
+    with pytest.raises(Exception, match="rest_api requires zod"):
         render(template_repo, tmp_path / "api-only", **{API: True})
 
 
-def test_the_rule_still_holds_when_the_question_validator_cannot_see_the_answer(tmp_path: Path) -> None:
-    """Copier gives a validator only the answer under its own name, which Jinja cannot spell for a
-    hyphenated question, so an interactively typed answer bypasses it. The computed alias `rest_api`
-    is the backstop: it must reject the combination on its own. Here the validator is removed."""
-    source = tmp_path / "source"
-    source.mkdir()
-    shutil.copy2(TEMPLATE_ROOT / "copier.yml", source / "copier.yml")
-    shutil.copytree(TEMPLATE_ROOT / "template", source / "template")
-    shutil.copytree(TEMPLATE_ROOT / "locks", source / "locks")
-    questions = (source / "copier.yml").read_text()
-    stripped = re.sub(r"(rest-api:\n(?:  .*\n)*?)  validator: >-\n    [^\n]*\n", r"\1", questions, count=1)
-    assert stripped != questions and "rest-api requires zod: answer zod=true as well (rest-api" not in stripped
-    (source / "copier.yml").write_text(stripped)
-    run_git(source, "init", "-q", "-b", "main")
-    run_git(source, "add", "-A")
-    run_git(source, "commit", "-q", "-m", "validator removed")
-
-    with pytest.raises(Exception, match="rest-api requires zod"):
-        render(source, tmp_path / "no", **{API: True})
-    assert not (tmp_path / "no").exists()
-    render(source, tmp_path / "fine", zod=True, **{API: True})  # and the valid combination still works
-    assert (tmp_path / "fine/src/app/api/v1/app-info/route.ts").is_file()
+def test_the_question_is_a_plain_identifier_with_no_alias_or_special_validation() -> None:
+    """The feature is named like the other options: a valid Jinja identifier, so the ordinary strict
+    boolean question and validator are enough and nothing has to be computed or hidden."""
+    text = (TEMPLATE_ROOT / "copier.yml").read_text()
+    questions = yaml.safe_load(text)
+    assert "rest-api" not in text and "_copier_answers" not in text  # no hyphenated name
+    assert API.isidentifier() and API in REGISTRY
+    question = questions[API]
+    assert (question["type"], question["default"], question["choices"]) == ("yaml", False, [False, True])
+    assert question["validator"].count("{% if rest_api is not boolean %}") == 1 and "zod" in question["validator"]
+    computed = [name for name, q in questions.items() if isinstance(q, dict) and q.get("when") is False]
+    assert computed == ["lock_key"]  # the only computed question is the existing lock selector
 
 
-def test_the_computed_alias_is_never_recorded_and_always_matches_the_answer(apps) -> None:
+def test_only_the_answer_is_recorded_and_it_always_matches_the_generated_files(apps) -> None:
     for label, project in apps.items():
         answers = yaml.safe_load((project / ".copier-answers.yml").read_text())
-        assert "rest_api" not in answers and "lock_key" not in answers, label
+        assert "lock_key" not in answers and "rest-api" not in answers, label
         assert (project / "src/app/api").is_dir() == answers[API], label
         assert (project / "src/server").is_dir() == answers[API], label
 

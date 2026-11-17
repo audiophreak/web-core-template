@@ -1,7 +1,7 @@
 """The REST API and `copier update`: enabling it later, keeping it, and being refused without Zod.
 
 Same published-release stand-in as tests/test_upgrade.py. Projects are made to look as if generated
-before the `rest-api` question existed (no such answer recorded), and carry committed user work:
+before the `rest_api` question existed (no such answer recorded), and carry committed user work:
 their own API route, their own schema, an edited page and a README note.
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 from conftest import TEMPLATE_ROOT, render, run_git
 from test_upgrade import USER_PAGE_EDIT, _adopt, _answers, _lock, _release, _update, published  # noqa: F401
 
-API = "rest-api"
+API = "rest_api"
 V1_TEMPLATE_DIR = "src/lib/{% if zod %}schemas{% endif %}/{% if rest_api %}v1{% endif %}"
 OWN_ROUTE = 'export function GET() {\n  return Response.json({ status: "ok" });\n}\n'
 OWN_SCHEMA = 'import { z } from "zod";\n\nexport const contactSchema = z.object({ phone: z.string() });\n'
@@ -166,7 +166,7 @@ def test_enabling_the_api_on_a_project_without_zod_is_refused_and_changes_nothin
     result = _update(project, "--vcs-ref", "v0.2.0", "--data", f"{API}=true")
 
     assert result.returncode != 0
-    assert "rest-api requires zod" in result.stderr + result.stdout
+    assert "rest_api requires zod" in result.stderr + result.stdout
     assert run_git(project, "status", "--porcelain") == ""  # nothing was written
     assert run_git(project, "rev-parse", "HEAD") == head and _answers(project) == answers
     assert not (project / "src/app/api").exists()
