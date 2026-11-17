@@ -8,6 +8,11 @@ Renders the working tree and the given release tag with the same answers and com
 projects file by file. `.copier-answers.yml` is excluded (it legitimately records the new commit and
 the new questions). Exit 0 when identical, 1 with the differences listed otherwise.
 
+A deliberate, reviewed change to one file is accepted with `--allow-change PATH` (repeatable). It
+accepts only a content difference in exactly that file, prints the line difference so it is visible,
+and fails if the file does not differ, so the allowance cannot outlive the change. Every other
+difference, in any other file, still fails.
+
 Release rule (docs/features.md): with every feature off, a new release must render byte-identically
 to the previous one, so adding a feature never changes an existing project.
 """
@@ -15,6 +20,7 @@ to the previous one, so adding a feature never changes an existing project.
 from __future__ import annotations
 
 import argparse
+import difflib
 import os
 import shutil
 import subprocess
@@ -78,6 +84,21 @@ def compare(old: dict[str, bytes], new: dict[str, bytes]) -> list[str]:
     return differences
 
 
+def split_allowed(differences: list[str], allowed: list[str]) -> tuple[list[str], list[str]]:
+    """(unaccounted differences, accepted ones). An allowance that matches nothing is itself a failure."""
+    accepted = [f"content differs: {path}" for path in allowed]
+    unaccounted = [d for d in differences if d not in accepted]
+    unaccounted += [f"expected change not present: {path}" for path in allowed if f"content differs: {path}" not in differences]
+    return unaccounted, [d for d in differences if d in accepted]
+
+
+def line_changes(old: bytes, new: bytes, name: str) -> list[str]:
+    lines = difflib.unified_diff(
+        old.decode("utf-8", "replace").splitlines(), new.decode("utf-8", "replace").splitlines(), f"{name} (release)", f"{name} (working tree)", lineterm="", n=0
+    )
+    return list(lines)
+
+
 def parse_set(pairs: list[str]) -> dict[str, object]:
     answers: dict[str, object] = {}
     for pair in pairs:
@@ -92,6 +113,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("tag", help="the release tag to compare against, e.g. v0.1.0")
     parser.add_argument("--set", dest="options", action="append", default=[], metavar="NAME=true|false")
+    parser.add_argument("--allow-change", action="append", default=[], metavar="PATH",
+                        help="accept a content difference in exactly this file (shown, never silent)")  # fmt: skip
     args = parser.parse_args(argv)
     answers = parse_set(args.options)
 
@@ -104,12 +127,19 @@ def main(argv: list[str] | None = None) -> int:
             print(f"cannot render release {args.tag}: {exc}", file=sys.stderr)
             return 2
         render(str(work / "src"), "HEAD", work / "new", answers)
-        differences = compare(tree(work / "old"), tree(work / "new"))
-    if differences:
-        print(f"NOT identical to {args.tag} ({len(differences)} difference(s)):")
-        print("\n".join(f"  {d}" for d in differences))
+        old_tree, new_tree = tree(work / "old"), tree(work / "new")
+        differences = compare(old_tree, new_tree)
+        unaccounted, accepted = split_allowed(differences, args.allow_change)
+        shown = {d: line_changes(old_tree[d.split(": ", 1)[1]], new_tree[d.split(": ", 1)[1]], d.split(": ", 1)[1]) for d in accepted}
+    if unaccounted:
+        print(f"NOT identical to {args.tag} ({len(unaccounted)} unaccounted difference(s)):")
+        print("\n".join(f"  {d}" for d in unaccounted))
         return 1
-    print(f"identical to {args.tag} (every file except .copier-answers.yml)")
+    for difference, lines in shown.items():
+        print(f"accepted by --allow-change ({difference}):")
+        print("\n".join(f"    {line}" for line in lines))
+    exceptions = f", except the {len(accepted)} accepted change(s) above" if accepted else ""
+    print(f"identical to {args.tag} (every file except .copier-answers.yml{exceptions})")
     return 0
 
 
