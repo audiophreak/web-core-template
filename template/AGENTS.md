@@ -1,0 +1,45 @@
+<!-- BEGIN:nextjs-agent-rules -->
+
+## This is NOT the Next.js you know
+
+This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` (resolved from this file's directory; in monorepos the `next` package may not be visible from the repo root) before writing any code. Heed deprecation notices.
+
+This block is written and re-added by `next dev` — verify at `node_modules/next/dist/server/lib/generate-agent-files.js`. Removing it from a diff only re-creates the uncommitted change; committing it with your work keeps the tree clean.
+
+<!-- END:nextjs-agent-rules -->
+
+# Project rules
+
+The application's requirements are not defined yet. Do not introduce architecture
+(databases, auth, APIs, state libraries, folder conventions) ahead of an agreed plan.
+
+## Commands
+
+- `npm run dev` — local dev server
+- `npm run lint` / `npm run typecheck` / `npm run test` / `npm run format:check`
+- `npm run format` — apply Prettier formatting
+- `npm run check` — every check plus a production build; this is the gate for all changes
+
+## Working agreement
+
+- Plan first. For anything beyond a trivial fix, propose the approach and wait for approval.
+- Keep changes small and focused on one concern; no drive-by refactors or reformatting.
+- Do not add, upgrade, or remove dependencies without approval. Pin exact versions.
+- Do not commit, push, merge, deploy, or rewrite Git history unless explicitly asked.
+- Work on a branch, never directly on `main`.
+- Work is not done until `npm run check` exits 0. Report actual results, including failures.
+- Add or update tests alongside behavior changes.
+- Update `README.md` or this file when commands, setup, or conventions change.
+
+## Secure coding
+
+- Treat all external input (forms, URL params, headers, API bodies) as untrusted; validate
+  it on the server before use. Client-side validation is for UX only.
+- Enforce authorization on the server, close to the data, never only in the UI.
+- Keep secrets in environment variables; never commit them, log them, or expose them to
+  the browser (only `NEXT_PUBLIC_*` variables reach the client — never put secrets there).
+- Return only the fields the caller needs; do not pass raw database or internal objects to
+  Client Components or API responses.
+- Prefer framework and platform features over hand-rolled security (crypto, sessions,
+  escaping). Read `node_modules/next/dist/docs/01-app/02-guides/data-security.md` before
+  writing data access or mutations.

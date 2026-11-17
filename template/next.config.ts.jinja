@@ -1,0 +1,19 @@
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  /* config options here */
+{%- if cache_components %}
+  cacheComponents: true,
+  partialPrefetching: true,
+{%- endif %}
+  turbopack: {
+    rules: {
+      "*.css": {
+        loaders: ["@tailwindcss/turbopack"],
+        as: "*.css",
+      },
+    },
+  },
+};
+
+export default nextConfig;

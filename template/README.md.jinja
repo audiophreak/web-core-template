@@ -1,0 +1,64 @@
+# {{ app_name }}
+
+{{ app_description }}
+
+A [Next.js](https://nextjs.org) (App Router) application written in TypeScript and styled with Tailwind CSS.
+
+## Prerequisites
+
+- Node.js 26.x (see `.nvmrc` and the `engines` field in `package.json`)
+- npm (bundled with Node.js)
+
+If you use [nvm](https://github.com/nvm-sh/nvm) or [fnm](https://github.com/Schniz/fnm), run `nvm install && nvm use` (or `fnm use`) in the repository root.
+
+## Getting started
+
+```bash
+npm ci        # install exact dependency versions from package-lock.json
+npm run dev   # start the dev server at http://localhost:3000
+```
+
+## Commands
+
+| Command                | What it does                                                     |
+| ---------------------- | ---------------------------------------------------------------- |
+| `npm run dev`          | Start the development server                                     |
+| `npm run build`        | Create a production build                                        |
+| `npm run start`        | Serve the production build                                       |
+| `npm run lint`         | Run ESLint                                                       |
+| `npm run typecheck`    | Generate Next.js route types, then run `tsc --noEmit`            |
+| `npm run test`         | Run unit tests once with Vitest (non-interactive)                |
+| `npm run format`       | Format the codebase with Prettier                                |
+| `npm run format:check` | Verify formatting without changing files                         |
+| `npm run check`        | Run lint, typecheck, format check, tests, and a production build |
+
+## Validation gate
+
+`npm run check` is the standard validation gate. It stops at the first failing step and exits nonzero, so it is suitable for CI. Run it and get a zero exit code before considering any change complete. The GitHub Actions workflow in `.github/workflows/ci.yml` runs `npm ci` and `npm run check` on every pull request and on pushes to `main`.
+
+## AI-assisted development
+
+`AGENTS.md` contains the project-specific instructions for AI coding agents (working agreement, secure-coding rules, and the commands above). `CLAUDE.md` imports it. Keep it up to date when commands or conventions change.
+
+## UI components (shadcn/ui)
+
+UI components come from [shadcn/ui](https://ui.shadcn.com) (Radix primitives, neutral theme, CSS variables, Lucide icons). Settings live in `components.json`; generated components live in `src/components/ui/` and are ours to edit.
+
+To add a component, for example `card`:
+
+```bash
+npx shadcn@4.23.0 add card   # use a release at least two weeks old
+```
+
+Then:
+
+1. Review the diff. The CLI can add files and dependencies and can edit `src/app/globals.css`.
+2. Pin any new dependency to an exact version in `package.json`.
+3. Run `npx prettier --write` on the new files, then `npm run check`.
+4. Import through the alias, for example `import { Card } from "@/components/ui/card"`.
+
+Add only the components the app uses. Theme colors are the CSS variables in `src/app/globals.css`.
+
+## Template updates
+
+This project was generated from a [Copier](https://copier-org.github.io/copier/) template. `.copier-answers.yml` records the answers and template version; commit it and do not edit it by hand. See the template's documentation for how to pull in template updates.

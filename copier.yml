@@ -1,0 +1,44 @@
+# web-core-template: the Web Core Copier template (Next.js, TypeScript, Tailwind, shadcn/ui).
+# Independently versioned: releases are git tags (vMAJOR.MINOR.PATCH). Rendered from ./template.
+# Validation lives here, with the template version that needs it, so raw `copier copy` and
+# any CLI that wraps it enforce the same rules.
+_min_copier_version: "9.19.1"
+_subdirectory: template
+_templates_suffix: .jinja
+_answers_file: .copier-answers.yml
+_exclude:
+  - copier.yml
+  - copier.yaml
+  - "~*"
+  - "*.py[co]"
+  - __pycache__
+  - .git
+  - .DS_Store
+  - .svn
+  - node_modules
+  - .next
+
+# Deliberately no `_tasks`, `_migrations` or `_jinja_extensions`: they execute code and
+# would force users to run Copier with --trust. Generation only renders files.
+
+app_name:
+  type: str
+  help: "Application name (lowercase letters, digits and hyphens; used as the npm package name)"
+  validator: >-
+    {% if not (app_name | regex_search('^[a-z][a-z0-9]*(-[a-z0-9]+)*$')) or (app_name | length) > 64 %}
+    Use 1-64 lowercase letters, digits and single hyphens, starting with a letter.
+    {% endif %}
+
+app_description:
+  type: str
+  help: 'One-line description (ASCII letters, digits, spaces and . , ; : ! ? '' " ( ) / & + -)'
+  default: A Next.js application
+  validator: >-
+    {% if not (app_description | regex_search('^[A-Za-z][A-Za-z0-9.,;:!?\x27\x22()/&+-]*( [A-Za-z0-9.,;:!?\x27\x22()/&+-]+)*$')) or (app_description | length) > 200 %}
+    Use up to 200 ASCII letters, digits and . , ; : ! ? ' " ( ) / & + -, starting with a letter, with single spaces only.
+    {% endif %}
+
+cache_components:
+  type: bool
+  default: true
+  help: "Enable Next.js Cache Components with Partial Prefetching? (data fetching becomes dynamic by default and caching is opt-in; Next.js plans to make both universal in its next major release)"
