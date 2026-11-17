@@ -37,7 +37,10 @@ The application's requirements are not defined yet. Do not introduce architectur
   it on the server before use. Client-side validation is for UX only.{% if zod %}
 - Validate external input with the Zod schemas in `src/lib/schemas/`, which client and server
   code share. Add a schema and a test for every new input shape, and parse with `safeParse` at
-  the trust boundary.{% endif %}
+  the trust boundary.{% if forms %}
+- Build forms with React Hook Form and `zodResolver`, using the shared schema as the single source
+  of the rules (see `src/components/forms/example-form.tsx`). Keep labels, `aria-invalid` and
+  error messages linked, and test with a DOM environment (`// @vitest-environment jsdom`).{% endif %}{% endif %}
 - Enforce authorization on the server, close to the data, never only in the UI.
 - Keep secrets in environment variables; never commit them, log them, or expose them to
   the browser (only `NEXT_PUBLIC_*` variables reach the client — never put secrets there).

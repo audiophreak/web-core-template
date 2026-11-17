@@ -1,0 +1,79 @@
+import { describe, expect, expectTypeOf, it } from "vitest";
+import { exampleFormSchema, type ExampleFormValues } from "@/lib/schemas";
+
+const valid = {
+  name: "Ada Lovelace",
+  email: "ada@example.com",
+  message: "Hello, this is a message.",
+};
+
+describe("exampleFormSchema", () => {
+  it("accepts valid input and returns typed data", () => {
+    const parsed: ExampleFormValues = exampleFormSchema.parse(valid);
+    expect(parsed).toEqual(valid);
+  });
+
+  it("infers its type from the schema", () => {
+    expectTypeOf<ExampleFormValues>().toEqualTypeOf<{
+      name: string;
+      email: string;
+      message: string;
+    }>();
+  });
+
+  it("trims surrounding spaces before checking", () => {
+    const parsed = exampleFormSchema.parse({
+      name: "  Ada  ",
+      email: "  ada@example.com ",
+      message: "   Hello, this is a message.  ",
+    });
+    expect(parsed).toEqual({ ...valid, name: "Ada" });
+  });
+
+  it.each([
+    ["name", "", "Enter your name (at least 2 characters)"],
+    ["name", " a ", "Enter your name (at least 2 characters)"],
+    ["name", "x".repeat(81), "Use 80 characters or fewer"],
+    ["email", "", "Enter your email address"],
+    ["email", "   ", "Enter your email address"],
+    ["email", "ada", "Enter a valid email address"],
+    ["email", "ada@", "Enter a valid email address"],
+    ["email", "@example.com", "Enter a valid email address"],
+    ["email", "ada@example", "Enter a valid email address"],
+    ["email", "ada lovelace@example.com", "Enter a valid email address"],
+    ["email", `${"a".repeat(250)}@example.com`, "Use 254 characters or fewer"],
+    ["message", "", "Write at least 10 characters"],
+    ["message", "too short", "Write at least 10 characters"],
+    ["message", "x".repeat(1001), "Use 1000 characters or fewer"],
+  ])("rejects %s %j with a readable message", (field, value, message) => {
+    const result = exampleFormSchema.safeParse({ ...valid, [field]: value });
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.map((issue) => issue.message)).toEqual([
+      message,
+    ]);
+    expect(result.error?.issues[0].path).toEqual([field]);
+  });
+
+  it("rejects missing and non-string fields", () => {
+    expect(exampleFormSchema.safeParse({}).success).toBe(false);
+    expect(exampleFormSchema.safeParse({ ...valid, name: 42 }).success).toBe(
+      false,
+    );
+    expect(exampleFormSchema.safeParse(null).success).toBe(false);
+  });
+
+  it("reports every invalid field at once", () => {
+    const result = exampleFormSchema.safeParse({
+      name: "",
+      email: "",
+      message: "",
+    });
+
+    expect(result.error?.issues.map((issue) => issue.path[0])).toEqual([
+      "name",
+      "email",
+      "message",
+    ]);
+  });
+});

@@ -77,8 +77,10 @@ def _record_evidence(name: str, project: Path, check: subprocess.CompletedProces
         ({"app_description": NEUTRAL_DESCRIPTION, "cache_components": False}, "e2e-plain-app"),
         ({"app_description": NEUTRAL_DESCRIPTION, "zod": True}, "e2e-zod-app"),
         ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "cache_components": False}, "e2e-zod-plain-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "forms": True}, "e2e-forms-app"),
+        ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "forms": True, "cache_components": False}, "e2e-forms-plain-app"),
     ],
-    ids=["defaults", "awkward-description", "cache-components-off", "zod", "zod-and-cache-components-off"],
+    ids=["defaults", "awkward-description", "cache-components-off", "zod", "zod-and-cache-components-off", "forms", "forms-and-cache-components-off"],
 )
 def test_generated_app_installs_and_passes_the_validation_gate(
     template_repo: Path, tmp_path: Path, answers: dict, name: str
@@ -99,6 +101,18 @@ def test_generated_app_installs_and_passes_the_validation_gate(
         assert "app-info.test.ts" in result.stdout
         assert "accepts this application's own app-info.json" in result.stdout
         assert result.stdout.count("rejects") >= 10
+    if answers.get("forms"):
+        # The feature's own DOM tests must have run inside the gate, in a DOM environment.
+        result = subprocess.run(
+            ["npm", "run", "-s", "test", "--", "src/components/forms", "src/app/forms-example", "src/lib/schemas/example-form", "--reporter=verbose"],
+            cwd=project, capture_output=True, text=True, timeout=300, check=False,
+        )  # fmt: skip
+        assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
+        for name in ("example-form.test.tsx", "page.test.tsx", "example-form.test.ts"):
+            assert name in result.stdout, name
+        for behavior in ("requires every field", "makes no network request", "shows a submitting state", "passes trimmed, validated values"):
+            assert behavior in result.stdout, behavior
+        assert "skipped" not in result.stdout.lower().replace("0 skipped", "")
 
 
 def test_evidence_is_recorded_before_the_gate_verdict() -> None:

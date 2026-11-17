@@ -1,0 +1,199 @@
+// @vitest-environment jsdom
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { ExampleForm } from "@/components/forms/example-form";
+
+const valid = {
+  Name: "Ada Lovelace",
+  "Email address": "ada@example.com",
+  Message: "Hello, this is a message.",
+};
+
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+  vi.unstubAllGlobals();
+});
+
+function type(label: string, value: string) {
+  fireEvent.change(screen.getByLabelText(label), { target: { value } });
+}
+
+function fillValid(overrides: Partial<typeof valid> = {}) {
+  for (const [label, value] of Object.entries({ ...valid, ...overrides })) {
+    type(label, value);
+  }
+}
+
+function submit() {
+  fireEvent.click(screen.getByRole("button", { name: /submit/i }));
+}
+
+describe("ExampleForm", () => {
+  it("says that nothing is saved or sent, and ties the notice to the form", () => {
+    const { container } = render(<ExampleForm />);
+
+    const notice = screen.getByText(/nothing you enter is saved or sent/i);
+    expect(
+      container.querySelector("form")?.getAttribute("aria-describedby"),
+    ).toBe(notice.id);
+  });
+
+  it("labels every field and starts without errors", () => {
+    render(<ExampleForm />);
+
+    for (const label of Object.keys(valid)) {
+      expect(screen.getByLabelText(label)).toBeTruthy();
+    }
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+    expect(
+      screen.getByLabelText("Name").getAttribute("aria-invalid"),
+    ).toBeNull();
+  });
+
+  it("requires every field and moves focus to the first invalid one", async () => {
+    const onValid = vi.fn();
+    render(<ExampleForm onValid={onValid} />);
+
+    submit();
+
+    const alerts = await screen.findAllByRole("alert");
+    expect(alerts.map((alert) => alert.textContent)).toEqual([
+      "Enter your name (at least 2 characters)",
+      "Enter your email address",
+      "Write at least 10 characters",
+    ]);
+    expect(document.activeElement).toBe(screen.getByLabelText("Name"));
+    expect(onValid).not.toHaveBeenCalled();
+  });
+
+  it("presents each Zod message accessibly: invalid state and a described-by link", async () => {
+    render(<ExampleForm />);
+
+    fillValid({ "Email address": "not-an-email" });
+    submit();
+
+    const alert = await screen.findByRole("alert");
+    const email = screen.getByLabelText("Email address");
+    expect(alert.textContent).toBe("Enter a valid email address");
+    expect(email.getAttribute("aria-invalid")).toBe("true");
+    expect(email.getAttribute("aria-describedby")).toBe(alert.id);
+    expect(
+      screen.getByLabelText("Name").getAttribute("aria-invalid"),
+    ).toBeNull();
+    expect(
+      screen.getByLabelText("Name").getAttribute("aria-describedby"),
+    ).toBeNull();
+  });
+
+  it("clears an error once the input is corrected and resubmitted", async () => {
+    const onValid = vi.fn();
+    render(<ExampleForm onValid={onValid} />);
+    fillValid({ Name: "A" });
+    submit();
+    expect((await screen.findByRole("alert")).textContent).toContain(
+      "at least 2 characters",
+    );
+
+    type("Name", "Ada");
+    submit();
+
+    await waitFor(() => expect(onValid).toHaveBeenCalledTimes(1));
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+    expect(
+      screen.getByLabelText("Name").getAttribute("aria-invalid"),
+    ).toBeNull();
+  });
+
+  it("passes trimmed, validated values to onValid and shows success feedback", async () => {
+    const onValid = vi.fn();
+    render(<ExampleForm onValid={onValid} />);
+
+    fillValid({ Name: "  Ada Lovelace  " });
+    submit();
+
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain(
+        "Thanks, Ada Lovelace.",
+      ),
+    );
+    expect(onValid).toHaveBeenCalledExactlyOnceWith({
+      name: "Ada Lovelace",
+      email: "ada@example.com",
+      message: "Hello, this is a message.",
+    });
+    expect(screen.getByRole("status").textContent).toContain(
+      "Nothing was saved or sent.",
+    );
+    expect((screen.getByLabelText("Name") as HTMLInputElement).value).toBe("");
+  });
+
+  it("works without any handler and shows no errors for valid input", async () => {
+    render(<ExampleForm />);
+
+    fillValid();
+    submit();
+
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain(
+        "Thanks, Ada Lovelace.",
+      ),
+    );
+    expect(screen.queryAllByRole("alert")).toHaveLength(0);
+  });
+
+  it("shows a submitting state, disables the button, and finishes when the handler does", async () => {
+    let finish: () => void = () => {};
+    const onValid = vi.fn(
+      () => new Promise<void>((resolve) => (finish = resolve)),
+    );
+    render(<ExampleForm onValid={onValid} />);
+
+    fillValid();
+    submit();
+
+    const button = await screen.findByRole("button", { name: "Submitting…" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("aria-busy")).toBe("true");
+    expect(screen.getByRole("status").textContent).toBe("");
+
+    finish();
+
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("Thanks"),
+    );
+    const done = screen.getByRole("button", {
+      name: "Submit",
+    }) as HTMLButtonElement;
+    expect(done.disabled).toBe(false);
+  });
+
+  it("makes no network request and does not navigate", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const xhrOpen = vi.spyOn(XMLHttpRequest.prototype, "open");
+    const beacon = vi.fn();
+    vi.stubGlobal("navigator", { ...navigator, sendBeacon: beacon });
+    const { container } = render(<ExampleForm />);
+    const form = container.querySelector("form") as HTMLFormElement;
+
+    fillValid();
+    const proceeded = fireEvent.submit(form); // false when the default (navigation) was prevented
+    await waitFor(() =>
+      expect(screen.getByRole("status").textContent).toContain("Thanks"),
+    );
+
+    expect(proceeded).toBe(false);
+    expect(form.getAttribute("action")).toBeNull();
+    expect(form.getAttribute("method")).toBeNull();
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(xhrOpen).not.toHaveBeenCalled();
+    expect(beacon).not.toHaveBeenCalled();
+  });
+});

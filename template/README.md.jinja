@@ -67,6 +67,15 @@ Shared [Zod](https://zod.dev) schemas live in `src/lib/schemas/` and are exporte
 from the index, and parse untrusted input with `safeParse` on the server; client-side checks are
 for UX only.
 
-{% endif %}## Template updates
+{% if forms %}## Forms (React Hook Form)
+
+`/forms-example` shows the pattern: [React Hook Form](https://react-hook-form.com) with
+`zodResolver` and a shared schema (`exampleFormSchema` in `src/lib/schemas/example-form.ts`), so the
+rules are written once and the form's types come from the schema. The form is in
+`src/components/forms/example-form.tsx` and is tested with a DOM environment next to it. It does not
+save or send anything: pass `onValid` to handle the values, validate again with the same schema on
+the server, then delete the example page.
+
+{% endif %}{% endif %}## Template updates
 
 This project was generated from a [Copier](https://copier-org.github.io/copier/) template. `.copier-answers.yml` records the answers and template version; commit it and do not edit it by hand. See the template's documentation for how to pull in template updates.

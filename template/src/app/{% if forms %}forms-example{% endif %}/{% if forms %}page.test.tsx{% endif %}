@@ -1,0 +1,22 @@
+import { renderToStaticMarkup } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+import FormsExamplePage from "@/app/forms-example/page";
+
+describe("Forms example page", () => {
+  it("renders a main landmark, a heading and a labelled form", () => {
+    const html = renderToStaticMarkup(<FormsExamplePage />);
+
+    expect(html).toContain("<main");
+    expect(html).toMatch(/<h1[^>]*>Form example<\/h1>/);
+    for (const label of ["Name", "Email address", "Message"]) {
+      expect(html).toMatch(new RegExp(`<label[^>]*>${label}</label>`));
+    }
+  });
+
+  it("says plainly that nothing is saved or sent", () => {
+    const html = renderToStaticMarkup(<FormsExamplePage />);
+
+    expect(html).toContain("Nothing you enter is saved or sent anywhere.");
+    expect(html).not.toMatch(/<form[^>]*\saction=/);
+  });
+});

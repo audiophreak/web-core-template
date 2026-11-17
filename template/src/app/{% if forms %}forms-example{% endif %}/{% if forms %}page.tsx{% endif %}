@@ -1,0 +1,17 @@
+import type { Metadata } from "next";
+import { ExampleForm } from "@/components/forms/example-form";
+
+export const metadata: Metadata = { title: "Form example" };
+
+export default function FormsExamplePage() {
+  return (
+    <main className="mx-auto flex w-full max-w-md flex-1 flex-col gap-6 p-8">
+      <h1 className="text-2xl font-semibold tracking-tight">Form example</h1>
+      <p className="text-muted-foreground">
+        React Hook Form validated by the shared Zod schema in{" "}
+        <code>src/lib/schemas</code>. Copy the pattern, then delete this page.
+      </p>
+      <ExampleForm />
+    </main>
+  );
+}

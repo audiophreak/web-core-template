@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 
 import features as f
+import refresh_locks
 from conftest import CONFIGURATIONS, REGISTRY, TEMPLATE_ROOT
 
 LOCKS = TEMPLATE_ROOT / "locks"
@@ -50,14 +51,36 @@ def test_the_lock_shim_renders_exactly_the_lock_file_bytes(config_app) -> None:
 
 @pytest.mark.parametrize("key", [k for k in KEYS if k != f.BASE_KEY])
 def test_feature_locks_are_additive_over_the_base_lock(key: str) -> None:
-    base, lock = load_lock(f.BASE_KEY), load_lock(key)
-    for path, entry in base["packages"].items():
-        if path == "":
-            continue
-        other = lock["packages"].get(path)
-        assert other is not None, f"{path} disappeared from lock {key}"
-        for field in ("version", "resolved", "integrity"):
-            assert other.get(field) == entry.get(field), f"{path}: {field} differs in lock {key}"
+    """Every base package version survives with the same source and integrity; direct dependencies
+    keep their path. (npm may re-hoist a version to a nested folder; that moves a path, not a version.)"""
+    relocated = refresh_locks.check_additive(load_lock(f.BASE_KEY), load_lock(key), key)
+    assert len(relocated) <= 20, "unexpectedly many re-hoisted packages: review the lock diff"
+
+
+def test_the_additivity_check_rejects_changed_removed_and_moved_direct_dependencies() -> None:
+    base = load_lock(f.BASE_KEY)
+
+    def mutated(edit) -> dict:
+        copy = json.loads(json.dumps(base))
+        edit(copy["packages"])
+        return copy
+
+    for label, edit in {
+        "a changed version": lambda p: p["node_modules/next"].update(version="0.0.1"),
+        "a changed integrity": lambda p: p["node_modules/react"].update(integrity="sha512-AAAA"),
+        "a removed package": lambda p: p.pop("node_modules/radix-ui"),
+        "a direct dependency moved": lambda p: p.update({"node_modules/zzz/node_modules/react": p.pop("node_modules/react")}),
+    }.items():
+        with pytest.raises(refresh_locks.ToolError, match="not additive"):
+            refresh_locks.check_additive(base, mutated(edit), "probe")
+        assert label
+
+    def hoist(packages: dict) -> None:  # the same version, in a different folder: allowed and reported
+        packages["node_modules/zzz/node_modules/ajv"] = packages["node_modules/ajv"]
+        packages["node_modules/ajv"] = packages["node_modules/ajv-formats/node_modules/ajv"]
+
+    moved = refresh_locks.check_additive(base, mutated(hoist), "probe")
+    assert "node_modules/ajv" in moved
 
 
 @pytest.mark.parametrize("key", KEYS)
@@ -89,3 +112,8 @@ def test_feature_dependencies_appear_only_when_selected(selection: frozenset, te
     render(template_repo, project, **f.answers(selection, REGISTRY))
     deps = set(json.loads((project / "package.json").read_text())["dependencies"])
     assert ("zod" in deps) == ("zod" in selection)
+    dev = set(json.loads((project / "package.json").read_text())["devDependencies"])
+    forms = {"@hookform/resolvers", "react-hook-form"}
+    testing = {"@testing-library/dom", "@testing-library/react", "jsdom"}
+    assert (forms <= deps) == ("forms" in selection) and not (forms & deps and "forms" not in selection)
+    assert (testing <= dev) == ("forms" in selection) and not (testing & dev and "forms" not in selection)
