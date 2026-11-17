@@ -22,6 +22,26 @@ git add -A && git commit -m "chore: update project template to v0.1.1"
 which can be a breaking release (a new Node major, renamed questions). Read `CHANGELOG.md` first.
 If you generated the project with `devkit`, take the release from the range your devkit supports.
 
+**Optional features survive upgrades.** A project's feature selections are recorded in
+`.copier-answers.yml` (for example `zod: true`) and `copier update` reuses them, so an upgrade
+never switches a feature on or off. Features introduced by a newer release take their default
+(off). To switch one on later:
+
+```bash
+copier update --vcs-ref v0.2.0 --data zod=true --defaults --skip-answered
+npm ci                                  # the lockfile now matches package.json
+npm run check
+```
+
+Only booleans are accepted (`true`/`false`, `yes`/`no`, `on`/`off`); anything else is rejected before
+anything changes. Switching a feature off again is not automated; remove its files and dependency by
+hand (or regenerate).
+
+After any update that changes dependencies, `npm ci` (not `npm install`) should succeed because the
+template ships a lockfile matching the new `package.json` for your feature selection; if the merge
+left conflict markers in `package.json` or `package-lock.json`, resolve `package.json` first and run
+`npm install` to repair the lockfile.
+
 Notes:
 
 - Conflicts are written inline (`<<<<<<<`, `=======`, `>>>>>>>`) and the command still exits 0:

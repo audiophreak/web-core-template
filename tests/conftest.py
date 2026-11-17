@@ -9,8 +9,17 @@ import copier
 import pytest
 from copier import Settings
 
+import features as feature_registry  # tools/ is on pytest's pythonpath
+
 TEMPLATE_ROOT = Path(__file__).resolve().parents[1]
 NEUTRAL_DESCRIPTION = "A neutral sample application"
+
+REGISTRY = feature_registry.load_registry()
+CONFIGURATIONS = feature_registry.configurations(REGISTRY)  # every supported feature selection
+
+
+def config_id(selection: frozenset[str]) -> str:
+    return "+".join(sorted(selection)) or "default"
 
 # Hermetic git identity so tests never read (or depend on) the machine's git configuration.
 GIT_TEST_ENV = {
@@ -35,7 +44,7 @@ def run_git(cwd: Path, *args: str) -> str:
 
 
 def snapshot_repo(destination: Path) -> Path:
-    """Copy copier.yml and template/ (never .git or .venv) into a new committed git repo.
+    """Copy copier.yml, template/ and locks/ (never .git or .venv) into a new committed git repo.
 
     Tests render from a snapshot, so they do not depend on the real repository's commits,
     tags or uncommitted state.
@@ -43,6 +52,7 @@ def snapshot_repo(destination: Path) -> Path:
     destination.mkdir(parents=True)
     shutil.copy2(TEMPLATE_ROOT / "copier.yml", destination / "copier.yml")
     shutil.copytree(TEMPLATE_ROOT / "template", destination / "template")
+    shutil.copytree(TEMPLATE_ROOT / "locks", destination / "locks")  # included by package-lock.json.jinja
     run_git(destination, "init", "-q", "-b", "main")
     run_git(destination, "add", "-A")
     run_git(destination, "commit", "-q", "-m", "snapshot")
@@ -81,3 +91,12 @@ def generated_app(template_repo: Path, tmp_path_factory: pytest.TempPathFactory)
     destination = tmp_path_factory.mktemp("generated") / "sample-app"
     render(template_repo, destination)
     return destination
+
+
+@pytest.fixture(scope="session", params=CONFIGURATIONS, ids=config_id)
+def config_app(request, template_repo: Path, tmp_path_factory: pytest.TempPathFactory):
+    """(selection, path) for every supported configuration in features.yml, rendered once."""
+    selection: frozenset[str] = request.param
+    destination = tmp_path_factory.mktemp("config") / "sample-app"
+    render(template_repo, destination, **feature_registry.answers(selection, REGISTRY))
+    return selection, destination

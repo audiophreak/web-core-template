@@ -35,9 +35,14 @@ Without `--vcs-ref`, Copier renders the newest tag. For template development use
 | `app_name`         | str  | required                | Lowercase letters, digits and single hyphens, 1-64, starting with a letter. The npm package name. |
 | `app_description`  | str  | `A Next.js application` | One line, up to 200 ASCII letters, digits and `. , ; : ! ? ' " ( ) / & + -`, starting with a letter, single spaces. |
 | `cache_components` | bool | `true`                  | Enables Next.js Cache Components with Partial Prefetching (`cacheComponents` and `partialPrefetching` in `next.config.ts`). Data fetching becomes dynamic by default and caching is opt-in. Next.js documents `partialPrefetching` as requiring `cacheComponents` and plans to make both universal in its next major release, so they are one switch here. |
+| `zod`              | bool | `false`                 | Adds Zod schema validation: the exact-pinned `zod` dependency, a shared schema module in `src/lib/schemas/` (`appInfoSchema` for `src/lib/app-info.json`) with tests that show accepted and rejected input, and matching README and `AGENTS.md` guidance. Off by default; with it off the output is identical to release 0.1.0 apart from `.copier-answers.yml`. |
 
 Validation lives in `copier.yml`, so raw `copier copy` and any wrapper enforce the same rules.
-Invalid answers fail before anything is written.
+Invalid answers fail before anything is written. Features (`zod`) are optional and independent today;
+`docs/features.md` explains how they compose, how rules between them are enforced and how their
+lockfiles are maintained. Boolean answers are strict: `true`/`false`, `yes`/`no` and `on`/`off` (in
+lower, Title or UPPER case) are accepted; anything else (`banana`, `1`, `y`, an empty value) is
+rejected before anything is written, with raw `copier` and with `devkit` alike.
 
 ## Versioning
 
@@ -54,8 +59,11 @@ matching platform release. See `CHANGELOG.md`, `docs/maintaining.md` (releasing)
 .github/          CI: runs the full test suite on pull requests and pushes to main
 copier.yml        questions, validators, exclusions (rendered from ./template)
 template/         files rendered into projects; *.jinja files are templated
+features.yml      registry of optional features (rules between them, which change npm dependencies)
+locks/            one committed lockfile per distinct npm dependency set (never rendered itself)
+tools/            features.py (the supported matrix), refresh_locks.py and compare_release.py
 tests/            render, validation, versioned-source, upgrade and end-to-end tests
-docs/             maintaining.md, upgrading.md, provenance.md
+docs/             features.md, maintaining.md, upgrading.md, provenance.md
 pyproject.toml    exact-pinned Copier and pytest for the test environment (uv.lock)
 AGENTS.md         rules for AI agents working on this repository
 ```
@@ -64,7 +72,7 @@ AGENTS.md         rules for AI agents working on this repository
 
 ```bash
 uv sync                        # project-local environment from uv.lock
-uv run pytest                  # everything, 73 tests (about 45 s with a warm npm cache)
-uv run pytest -m "not e2e"     # fast: render, validation, versions, upgrades (no npm, about 15 s)
-uv run pytest -m e2e           # generates three apps and runs npm ci + npm run check in each
+uv run pytest                  # everything, 129 tests (about 70 s with a warm npm cache)
+uv run pytest -m "not e2e"     # fast: render, validation, versions, upgrades (no npm, about 30 s)
+uv run pytest -m e2e           # generates five apps (feature combinations) and runs npm ci + npm run check in each
 ```
