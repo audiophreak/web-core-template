@@ -6,6 +6,7 @@ Run with `uv run pytest -m e2e`, or skip with `-m "not e2e"`.
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -30,7 +31,7 @@ def _node_available() -> None:
         pytest.skip(f"Node {major} found; the template pins {required}")
 
 
-def _npm(project: Path, *args: str) -> None:
+def _npm(project: Path, *args: str) -> subprocess.CompletedProcess[str]:
     result = subprocess.run(
         ["npm", *args], cwd=project, capture_output=True, text=True, timeout=900, check=False
     )
@@ -39,6 +40,25 @@ def _npm(project: Path, *args: str) -> None:
         f"--- stdout (tail) ---\n{result.stdout[-3000:]}\n"
         f"--- stderr (tail) ---\n{result.stderr[-3000:]}"
     )
+    return result
+
+
+def _record_evidence(name: str, project: Path, check: subprocess.CompletedProcess[str]) -> None:
+    """With WEB_CORE_EVIDENCE_DIR set (CI does), keep each app's gate output and production audit.
+
+    Recording never changes a verdict: the audit is stored with its exit code, not asserted.
+    """
+    target = os.environ.get("WEB_CORE_EVIDENCE_DIR")
+    if not target:
+        return
+    out = Path(target)
+    out.mkdir(parents=True, exist_ok=True)
+    (out / f"{name}.check.txt").write_text(check.stdout + check.stderr, encoding="utf-8")
+    audit = subprocess.run(
+        ["npm", "audit", "--omit=dev", "--json"], cwd=project, capture_output=True, text=True, timeout=300, check=False
+    )
+    (out / f"{name}.audit.json").write_text(audit.stdout, encoding="utf-8")
+    (out / f"{name}.audit-exit-code.txt").write_text(f"{audit.returncode}\n", encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -58,7 +78,8 @@ def test_generated_app_installs_and_passes_the_validation_gate(
     project = tmp_path / name
     render(template_repo, project, app_name=name, **answers)
     _npm(project, "ci", "--no-audit", "--no-fund")
-    _npm(project, "run", "check")
+    check = _npm(project, "run", "check")
+    _record_evidence(name, project, check)
     if answers.get("zod"):
         # The feature's own tests must actually have run inside the gate: accepted and rejected input.
         result = subprocess.run(

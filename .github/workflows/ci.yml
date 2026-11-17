@@ -16,6 +16,11 @@ jobs:
       matrix:
         python-version: ["3.12", "3.14"]
     timeout-minutes: 30
+    env:
+      # The commit under test. On pull requests GITHUB_SHA is a synthetic merge commit, so the
+      # branch tip is used; both are recorded in reports/metadata.txt.
+      EVIDENCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+      WEB_CORE_EVIDENCE_DIR: reports/generated-apps
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,4 +33,70 @@ jobs:
           node-version-file: template/.nvmrc
       - run: python -m pip install uv==0.13.6
       - run: uv sync --locked
-      - run: uv run --locked pytest
+      - name: Test (JUnit XML and console output go to reports/)
+        shell: bash
+        run: |
+          mkdir -p reports
+          uv run --locked pytest -q -rfEs \
+            -o junit_family=xunit2 -o junit_logging=no \
+            -o "junit_suite_name=web-core-template@${EVIDENCE_COMMIT}-py${{ matrix.python-version }}" \
+            --junitxml=reports/junit.xml 2>&1 | tee reports/pytest-output.txt
+      - name: Record run metadata
+        if: always()
+        shell: bash
+        run: |
+          mkdir -p reports
+          {
+            echo "repository=${GITHUB_REPOSITORY}"
+            echo "commit_under_test=${EVIDENCE_COMMIT}"
+            echo "github_sha=${GITHUB_SHA}"
+            echo "ref=${GITHUB_REF}"
+            echo "event=${GITHUB_EVENT_NAME}"
+            echo "run_id=${GITHUB_RUN_ID}"
+            echo "run_attempt=${GITHUB_RUN_ATTEMPT}"
+            echo "runner_os=${RUNNER_OS}"
+            echo "matrix_python=${{ matrix.python-version }}"
+            echo "python=$(python --version 2>&1)"
+            echo "node=$(node --version 2>&1)"
+            echo "npm=$(npm --version 2>&1)"
+            echo "uv=$(uv --version 2>&1)"
+            echo "pytest=$(uv run --locked python -m pytest --version 2>&1)"
+            echo "uv_lock_sha256=$(sha256sum uv.lock | cut -d' ' -f1)"
+            echo "locks_base_sha256=$(sha256sum locks/base.json | cut -d' ' -f1)"
+            echo "locks_zod_sha256=$(sha256sum locks/zod.json | cut -d' ' -f1)"
+          } > reports/metadata.txt
+          uv pip freeze --exclude-editable > reports/installed-packages.txt
+      - name: Summarize results
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "### Test results: \`${GITHUB_REPOSITORY}\` @ \`${EVIDENCE_COMMIT:0:12}\`, Python ${{ matrix.python-version }}"
+            echo
+            if [ -f reports/pytest-output.txt ]; then
+              echo '```text'
+              tail -n 60 reports/pytest-output.txt
+              echo '```'
+            else
+              echo "No pytest output was produced: the job failed before the tests ran."
+            fi
+            echo
+            echo "Downloadable artifact: junit.xml, pytest-output.txt, metadata.txt, installed-packages.txt, generated-apps/ (see docs/ci-evidence.md)."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Check reports contain no token-shaped strings
+        id: scan
+        if: always()
+        shell: bash
+        run: |
+          if [ -d reports ] && grep -r -n -E 'gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|-----BEGIN [A-Z ]*PRIVATE KEY-----|AKIA[0-9A-Z]{16}' reports; then
+            echo "::error::a token-shaped string is in reports/; the artifact upload is skipped"
+            exit 1
+          fi
+      - name: Upload test reports
+        if: always() && steps.scan.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports-py${{ matrix.python-version }}-${{ env.EVIDENCE_COMMIT }}
+          path: reports/
+          if-no-files-found: error
+          retention-days: 30
