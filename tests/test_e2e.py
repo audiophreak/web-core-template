@@ -61,6 +61,7 @@ def _record_evidence(name: str, project: Path, check: subprocess.CompletedProces
     out = Path(target)
     out.mkdir(parents=True, exist_ok=True)
     (out / f"{name}.check.txt").write_text(check.stdout + check.stderr, encoding="utf-8")
+    (out / f"{name}.check-exit-code.txt").write_text(f"{check.returncode}\n", encoding="utf-8")
     audit = subprocess.run(
         ["npm", "audit", "--omit=dev", "--json"], cwd=project, capture_output=True, text=True, timeout=300, check=False
     )
@@ -145,9 +146,7 @@ def test_without_the_ignore_prettier_rejects_the_numeric_commit(numeric_app: Pat
     _npm(numeric_app, "run", "format:check")
 
 
-def test_other_source_files_are_still_format_checked(
-    numeric_app: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_other_source_files_are_still_format_checked(numeric_app: Path) -> None:
     probe = numeric_app / "src" / "lib" / "format-probe.ts"
     probe.write_text("export const   probe  =   1\n", encoding="utf-8")  # valid TypeScript, not Prettier style
     try:
@@ -156,12 +155,31 @@ def test_other_source_files_are_still_format_checked(
         assert result.returncode != 0
         assert "format-probe.ts" in output
         assert ".copier-answers.yml" not in output  # only the real offender is reported
-        # The same failing result is kept as evidence, with its audit, instead of being lost.
-        monkeypatch.setenv("WEB_CORE_EVIDENCE_DIR", str(tmp_path / "evidence"))
-        _record_evidence("probe-app", numeric_app, result)
-        recorded = tmp_path / "evidence"
-        assert "format-probe.ts" in (recorded / "probe-app.check.txt").read_text(encoding="utf-8")
-        assert (recorded / "probe-app.audit.json").is_file() and (recorded / "probe-app.audit-exit-code.txt").is_file()
     finally:
         probe.unlink()
     _npm(numeric_app, "run", "format:check")
+
+
+def test_a_failing_gate_keeps_its_evidence_and_cannot_be_mistaken_for_success(
+    numeric_app: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deliberately fails `npm run check` in a disposable generated app, the way the e2e test sees it."""
+    probe = numeric_app / "src" / "lib" / "format-probe.ts"
+    probe.write_text("export const   probe  =   1\n", encoding="utf-8")
+    evidence = tmp_path / "evidence"
+    monkeypatch.setenv("WEB_CORE_EVIDENCE_DIR", str(evidence))
+    try:
+        check = _run_npm(numeric_app, "run", "check")
+        _record_evidence("failing-app", numeric_app, check)  # exactly what the e2e test does before asserting
+        with pytest.raises(AssertionError, match="exited [1-9]"):
+            _assert_ok(check, "run", "check")  # the verdict is still a test failure
+    finally:
+        probe.unlink()
+    assert check.returncode != 0
+    assert "format-probe.ts" in (evidence / "failing-app.check.txt").read_text(encoding="utf-8")
+    assert (evidence / "failing-app.check-exit-code.txt").read_text(encoding="utf-8").strip() == str(check.returncode)
+    assert (evidence / "failing-app.audit.json").is_file() and (evidence / "failing-app.audit-exit-code.txt").is_file()
+    for path in evidence.iterdir():  # reports carry command output only, never the environment
+        text = path.read_text(encoding="utf-8")
+        assert "GITHUB_TOKEN" not in text and "PATH=" not in text
+    _npm(numeric_app, "run", "check")  # the app is healthy again once the probe is gone

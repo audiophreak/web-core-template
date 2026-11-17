@@ -28,6 +28,14 @@ def test_prettier_ignores_exactly_the_lockfile_and_the_root_answers_file(generat
     assert _patterns(generated_app) == EXPECTED_IGNORED  # anchored: no other YAML or source file is exempt
 
 
+RELEASED_0_2_0_PRETTIERIGNORE = "package-lock.json\n"
+
+
+def test_the_generated_ignore_file_differs_from_v0_2_0_by_exactly_one_added_line(generated_app: Path) -> None:
+    """The one intended difference in generated output since v0.2.0 (tools/compare_release.py --allow-change)."""
+    assert (generated_app / ".prettierignore").read_text(encoding="utf-8") == RELEASED_0_2_0_PRETTIERIGNORE + "/.copier-answers.yml\n"
+
+
 def test_the_ignore_does_not_touch_the_answers_file_itself(generated_app: Path, template_repo: Path, tmp_path: Path) -> None:
     other = tmp_path / "other"
     render(template_repo, other, app_name="other-app", zod=True)

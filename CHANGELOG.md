@@ -9,8 +9,13 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`). In 0.x, a minor bump may be breaki
   abbreviated hash as `_commit`; an all-digit hash is serialized single-quoted, which Prettier rejects,
   so `npm run check` failed intermittently. Released tags record `vX.Y.Z` and were not affected. The
   answers file, its serialization and every other source file are unchanged and still checked.
+  **Generated-output difference from v0.2.0: exactly one added line**, `/.copier-answers.yml`, in
+  `.prettierignore`; every other generated file is byte-identical (verified with
+  `tools/compare_release.py v0.2.0 --allow-change .prettierignore`, default and `zod=true`).
 - The end-to-end tests record each generated app's gate output and audit before asserting the verdict, so
-  a failing gate keeps its evidence. Deterministic tests cover a numeric `_commit` (`1234567`).
+  a failing gate keeps its evidence, including its exit status. Deterministic tests cover a numeric
+  `_commit` (`1234567`) and a deliberately failing gate. `compare_release.py` gained `--allow-change PATH`,
+  an exact, visible, single-file allowance that fails if the file did not change.
 
 - CI now uploads downloadable test evidence for every run and Python version, including failed runs:
   JUnit XML, the console record, run metadata tied to the commit under test, installed package

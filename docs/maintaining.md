@@ -50,6 +50,9 @@ a tag never points at an unverified commit.
    `uv run python tools/compare_release.py <previous tag>` must report that the default
    configuration is identical to the previous release; `uv run python tools/refresh_locks.py
    --check` must report every lockfile up to date.
+   For the first release after v0.2.0 the one intended difference is the added
+   `/.copier-answers.yml` line in `.prettierignore`: run the comparison with
+   `--allow-change .prettierignore` (default and `--set zod=true`); any other difference must still fail.
 4. CI must be green on the pull request for Python 3.12 and 3.14.
 5. Mark the pull request ready and merge it with a **merge commit** (not squash or rebase, so the
    branch history is preserved). Keep the branch.
