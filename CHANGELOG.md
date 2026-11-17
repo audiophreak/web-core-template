@@ -4,6 +4,14 @@ Versions are git tags (`vMAJOR.MINOR.PATCH`). In 0.x, a minor bump may be breaki
 
 ## Unreleased
 
+- Generated projects no longer let Prettier check Copier's `.copier-answers.yml` (root file only, via
+  `.prettierignore`). When the template is rendered from an untagged commit, Copier records the
+  abbreviated hash as `_commit`; an all-digit hash is serialized single-quoted, which Prettier rejects,
+  so `npm run check` failed intermittently. Released tags record `vX.Y.Z` and were not affected. The
+  answers file, its serialization and every other source file are unchanged and still checked.
+- The end-to-end tests record each generated app's gate output and audit before asserting the verdict, so
+  a failing gate keeps its evidence. Deterministic tests cover a numeric `_commit` (`1234567`).
+
 - CI now uploads downloadable test evidence for every run and Python version, including failed runs:
   JUnit XML, the console record, run metadata tied to the commit under test, installed package
   versions, and for each generated app in the end-to-end tests its gate output and production

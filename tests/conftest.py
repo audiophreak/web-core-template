@@ -7,6 +7,7 @@ from pathlib import Path
 
 import copier
 import pytest
+import yaml
 from copier import Settings
 
 import features as feature_registry  # tools/ is on pytest's pythonpath
@@ -100,3 +101,22 @@ def config_app(request, template_repo: Path, tmp_path_factory: pytest.TempPathFa
     destination = tmp_path_factory.mktemp("config") / "sample-app"
     render(template_repo, destination, **feature_registry.answers(selection, REGISTRY))
     return selection, destination
+
+
+NUMERIC_COMMIT = "1234567"
+
+
+def with_numeric_commit(project: Path) -> str:
+    """Rewrite `_commit` in the project's answers file to an all-digit string, as Copier records it
+    when the abbreviated hash of an untagged commit happens to be numeric. Serialized the way
+    Copier's `to_nice_yaml` does (PyYAML safe_dump), which single-quotes it so it stays a string.
+    Returns the new file text.
+    """
+    path = project / ".copier-answers.yml"
+    answers = yaml.safe_load(path.read_text(encoding="utf-8"))
+    answers["_commit"] = NUMERIC_COMMIT
+    text = "# Changes here will be overwritten by Copier; NEVER EDIT MANUALLY\n" + yaml.safe_dump(
+        answers, default_flow_style=False, sort_keys=True, allow_unicode=True
+    )
+    path.write_text(text, encoding="utf-8")
+    return text

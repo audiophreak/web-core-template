@@ -16,7 +16,7 @@ kept for **30 days**.
 | `pytest-output.txt` | The full console output, with a short summary of every failure, error and skip. |
 | `metadata.txt` | `commit_under_test`, `github_sha`, `ref`, `event`, `run_id`, `run_attempt`, `runner_os`, Python, Node, npm, `uv` and pytest versions, and SHA-256 of `uv.lock`, `locks/base.json` and `locks/zod.json`. |
 | `installed-packages.txt` | Exact Python package versions installed for the run. |
-| `generated-apps/<app>.check.txt` | Output of `npm run check` (lint, type check, format check, tests, build) inside each generated app of the end-to-end tests. |
+| `generated-apps/<app>.check.txt` | Output of `npm run check` (lint, type check, format check, tests, build) inside each generated app of the end-to-end tests. Recorded before the verdict, so it is present even when the gate fails. |
 | `generated-apps/<app>.audit.json` and `<app>.audit-exit-code.txt` | The `npm audit --omit=dev --json` result of each generated app and its exit code. It is **recorded, not asserted**: it documents the production dependency state at that time and never changes a verdict. |
 
 The run's page also shows a **job summary**: the last 60 lines of the console record (pass, fail and

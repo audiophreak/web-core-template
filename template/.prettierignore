@@ -1,1 +1,4 @@
 package-lock.json
+# Copier-managed record of the template version and answers (never edited by hand). Its YAML
+# quoting is Copier's, so Prettier must not rewrite or reject it. Anchored: only this root file.
+/.copier-answers.yml
