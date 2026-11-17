@@ -79,8 +79,13 @@ def _record_evidence(name: str, project: Path, check: subprocess.CompletedProces
         ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "cache_components": False}, "e2e-zod-plain-app"),
         ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "forms": True}, "e2e-forms-app"),
         ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "forms": True, "cache_components": False}, "e2e-forms-plain-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "rest-api": True}, "e2e-api-app"),
+        ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "rest-api": True, "cache_components": False}, "e2e-api-plain-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "forms": True, "rest-api": True}, "e2e-forms-api-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "forms": True, "rest-api": True, "cache_components": False}, "e2e-forms-api-plain-app"),
     ],
-    ids=["defaults", "awkward-description", "cache-components-off", "zod", "zod-and-cache-components-off", "forms", "forms-and-cache-components-off"],
+    ids=["defaults", "awkward-description", "cache-components-off", "zod", "zod-and-cache-components-off", "forms", "forms-and-cache-components-off",
+         "rest-api", "rest-api-awkward-and-cache-components-off", "forms-and-rest-api", "forms-and-rest-api-cache-components-off"],
 )
 def test_generated_app_installs_and_passes_the_validation_gate(
     template_repo: Path, tmp_path: Path, answers: dict, name: str
@@ -111,6 +116,20 @@ def test_generated_app_installs_and_passes_the_validation_gate(
         for name in ("example-form.test.tsx", "page.test.tsx", "example-form.test.ts"):
             assert name in result.stdout, name
         for behavior in ("requires every field", "makes no network request", "shows a submitting state", "passes trimmed, validated values"):
+            assert behavior in result.stdout, behavior
+        assert "skipped" not in result.stdout.lower().replace("0 skipped", "")
+    if answers.get("rest-api"):
+        # The API's own tests must have run inside the gate: handlers called with Request objects.
+        result = subprocess.run(
+            ["npm", "run", "-s", "test", "--", "src/app/api", "src/server", "src/lib/schemas/v1", "--reporter=verbose"],
+            cwd=project, capture_output=True, text=True, timeout=300, check=False,
+        )  # fmt: skip
+        assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
+        for name in ("validate/route.test.ts", "app-info/route.test.ts", "[...path]/route.test.ts", "request.test.ts", "responses.test.ts",
+                     "boundary.test.ts", "contract.test.ts"):  # fmt: skip
+            assert name in result.stdout, name
+        for behavior in ("rejects malformed JSON", "enforces the limit while streaming", "is never reached by a client component",
+                         "keeps the error codes", "does not echo the submitted text", "makes no network request"):  # fmt: skip
             assert behavior in result.stdout, behavior
         assert "skipped" not in result.stdout.lower().replace("0 skipped", "")
 

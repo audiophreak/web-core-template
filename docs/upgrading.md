@@ -33,8 +33,10 @@ npm ci                                  # the lockfile now matches package.json
 npm run check
 ```
 
-`forms` can be switched on the same way (`--data forms=true`), but only for a project that already
-has `zod`; without it the update is refused and nothing changes.
+`forms` and `rest-api` can be switched on the same way (`--data forms=true`, `--data rest-api=true`),
+but only for a project that already has `zod`; without it the update is refused and nothing changes.
+`rest-api` adds files only (no dependency, the lockfile is untouched), keeps any `src/app/api/` routes
+you wrote yourself and leaves your Forms selection exactly as it was.
 
 Only booleans are accepted (`true`/`false`, `yes`/`no`, `on`/`off`); anything else is rejected before
 anything changes. Switching a feature off again is not automated; remove its files and dependency by

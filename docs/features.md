@@ -4,8 +4,9 @@ Optional features are how one template produces several kinds of project. This p
 mechanics; the reasoning, the alternatives and the roadmap are in the `developer-platform`
 repository (`docs/feature-composition.md`, `docs/full-stack-plan.md`).
 
-Currently available: **`zod`** (Zod schema validation) and **`forms`** (React Hook Form with the Zod
-resolver; requires `zod`). Everything else is planned there.
+Currently available: **`zod`** (Zod schema validation), **`forms`** (React Hook Form with the Zod
+resolver) and **`rest-api`** (versioned route handlers); the last two require `zod`. Everything else is
+planned there.
 
 ## The model
 
@@ -199,3 +200,54 @@ the same schema.
 Enabling it later: `copier update --vcs-ref <release> --data forms=true` on a project that already has
 `zod` (tested: files, dependencies and the matching lock are added; user files are kept). On a project
 without Zod the update is refused and nothing changes.
+
+## The `rest-api` feature
+
+`rest-api: true` requires `zod: true`, like `forms`, and is independent of `forms`: all five valid
+selections (none, `zod`, `zod`+`forms`, `zod`+`rest-api`, all three) render and pass their gate, each with
+Cache Components on and off. It adds **no npm dependency**: it uses the platform's `Request`,
+`Response` and `ReadableStream` and the existing exact-pinned `zod`, so a project with it uses the same
+lockfile as the one without (`zod` or `forms+zod`) and `lock_key` is unchanged.
+
+| What | Where |
+| ---- | ----- |
+| Route handlers | `src/app/api/v1/app-info/`, `src/app/api/v1/examples/validate/`, and `src/app/api/v1/[...path]/` (the standard 404 for unknown paths) |
+| Versioned contracts: request and response schemas, error codes | `src/lib/schemas/v1/`, exported as `v1` from `src/lib/schemas/index.ts` |
+| Server-only helpers: `problem()`, `json()`, `readJson()`, `guarded()` | `src/server/api/` |
+| Contract and boundary tests | `src/lib/schemas/v1/contract.test.ts`, `src/server/boundary.test.ts` |
+| Endpoint, error and versioning documentation (shipped to the project) | `docs/api-v1.md` |
+
+Design points, each enforced by a test in the generated project or in this repository:
+
+- **Every boundary parses.** Request bodies are read with a size bound that holds while streaming,
+  checked for media type, UTF-8 and JSON, then `safeParse`d with the versioned schema. Responses are
+  validated against an explicit strict schema before they are sent; a mismatch becomes a generic 500,
+  never the data. Errors are RFC 9457 `application/problem+json` with a stable `code`, no stack trace,
+  path or secret, and never the submitted values (an unexpected field is reported without its name).
+- **Additive within v1.** `contract.test.ts` pins every field name and error code. A breaking change
+  creates `/api/v2` beside `v1`. The schemas are plain Zod, so JSON Schema or OpenAPI can be derived
+  later (`z.toJSONSchema` is tested); no generator ships yet.
+- **Server code is separated by directory and checked.** Only `src/server/` and `src/app/api/` may
+  import `src/server/`, no client component may reach it (the check walks the import graph), and the
+  shared schemas import nothing from the framework, `node:` or the environment. The roadmap's
+  `import "server-only"` is not used because that package is not in the lockfile and the feature adds no
+  dependency; the import-graph test enforces the same boundary.
+- **No CORS headers**, no Server Actions, no database, authentication or logging of requests.
+
+### Why the question is `rest-api` but templates read `rest_api`
+
+Copier question names may contain a hyphen, but Jinja cannot name a hyphenated variable, and a
+question's validator sees only that question's own answer under that name. Three consequences, all
+tested:
+
+1. `rest-api` is a normal strict boolean question; templates and file names use the computed, never
+   recorded alias `rest_api` (`{% if rest_api %}`), and a test checks it always equals the answer.
+2. When the answer is supplied up front (`--data`, a recorded answer on `copier update`) it is also in
+   `_copier_answers` as the **raw** value (for example the string `yes`), so the `rest-api` validator
+   accepts exactly the spellings the other booleans accept and gives the readable message
+   `rest-api requires zod`.
+3. Copier does not run validators on hidden questions, but it does check `choices`. The alias
+   therefore renders a value outside its choices when `rest-api` is on and `zod` is off, which stops
+   generation before any file is written in **every** flow, including an answer typed at an interactive
+   prompt (where the question's own validator cannot see it). A test removes the validator and proves
+   the backstop alone rejects the combination.

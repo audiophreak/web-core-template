@@ -9,7 +9,7 @@ import pytest
 import yaml
 
 import features as f
-from conftest import REGISTRY, TEMPLATE_ROOT
+from conftest import REGISTRY, TEMPLATE_ROOT, answer_expression
 from features import Feature, RegistryError
 
 
@@ -36,8 +36,10 @@ def sel(*names: str) -> frozenset[str]:
 # ----------------------------------------------------------------------- the real registry
 
 
-def test_the_real_registry_is_valid_and_lists_zod_and_forms() -> None:
-    assert sorted(REGISTRY) == ["forms", "zod"]
+def test_the_real_registry_is_valid_and_lists_zod_forms_and_rest_api() -> None:
+    assert sorted(REGISTRY) == ["forms", "rest-api", "zod"]
+    api = REGISTRY["rest-api"]
+    assert api.requires == ("zod",) and api.conflicts == () and api.npm is False and api.summary
     assert REGISTRY["zod"].npm is True and REGISTRY["zod"].summary
     assert REGISTRY["forms"].npm is True and REGISTRY["forms"].summary
     assert REGISTRY["forms"].requires == ("zod",) and REGISTRY["forms"].conflicts == ()
@@ -50,7 +52,7 @@ def test_every_feature_is_a_strict_boolean_copier_question_that_defaults_to_off(
     for feature_id in REGISTRY:
         question = questions[feature_id]
         assert question["type"] == "yaml" and question["choices"] == [False, True], feature_id
-        assert f"{feature_id} is not boolean" in question["validator"], feature_id
+        assert f"{answer_expression(feature_id)} is not boolean" in question["validator"], feature_id
         assert question["default"] is False, feature_id
         assert question.get("help"), f"{feature_id} needs help text"
 
@@ -60,19 +62,31 @@ def test_feature_rules_are_mirrored_by_validators_in_copier_yml() -> None:
     questions = yaml.safe_load((TEMPLATE_ROOT / "copier.yml").read_text())
     for feature in REGISTRY.values():
         if feature.requires or feature.conflicts:
-            validator = questions[feature.id].get("validator", "")
+            # A hyphenated question (rest-api) also states its rule in its computed alias (rest_api),
+            # which Copier checks in every flow because it does not run validators on hidden questions.
+            alias = questions.get(feature.id.replace("-", "_"), {}) if "-" in feature.id else {}
+            validator = questions[feature.id].get("validator", "") + str(alias.get("default", ""))
             for other in (*feature.requires, *feature.conflicts):
                 assert other in validator, f"{feature.id}: validator does not mention {other}"
 
 
 def test_the_supported_matrix_of_the_real_registry() -> None:
-    assert [sorted(c) for c in f.configurations(REGISTRY)] == [[], ["zod"], ["forms", "zod"]]
+    assert [sorted(c) for c in f.configurations(REGISTRY)] == [
+        [],
+        ["zod"],
+        ["forms", "zod"],
+        ["rest-api", "zod"],
+        ["forms", "rest-api", "zod"],
+    ]
+    # rest-api changes no npm dependency, so it shares the lock of the configuration without it
     assert {k: [sorted(c) for c in v] for k, v in f.lock_keys(REGISTRY).items()} == {
         "base": [[]],
-        "zod": [["zod"]],
-        "forms+zod": [["forms", "zod"]],
+        "zod": [["zod"], ["rest-api", "zod"]],
+        "forms+zod": [["forms", "zod"], ["forms", "rest-api", "zod"]],
     }
     assert f.problems(frozenset({"forms"}), REGISTRY) == ["forms requires zod"]
+    assert f.problems(frozenset({"rest-api"}), REGISTRY) == ["rest-api requires zod"]
+    assert f.problems(frozenset({"forms", "rest-api"}), REGISTRY) == ["forms requires zod", "rest-api requires zod"]
 
 
 def test_the_lockfile_matrix_stays_small() -> None:

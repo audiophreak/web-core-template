@@ -73,6 +73,31 @@ forms:
     {% if forms is not boolean %}Answer true or false.{% elif forms and not zod %}forms requires zod: answer zod=true as well (forms is never enabled for you).{% endif %}
   help: "Add React Hook Form? (requires zod; adds exact-pinned react-hook-form and @hookform/resolvers, a small example form at /forms-example validated by a shared schema, and DOM test libraries as dev dependencies)"
 
+# The name has a hyphen, so Jinja cannot name it as a variable, and a validator only sees the
+# answer under that name. When the answer is supplied up front (--data, a recorded answer) it is
+# also in `_copier_answers`, as the raw value (a string such as "yes" from the command line), so the
+# check below accepts exactly the spellings the other questions accept; the computed alias `rest_api`
+# repeats the prerequisite rule for every other flow (see below).
+rest-api:
+  type: yaml  # a strict boolean: see the note above the questions
+  default: false
+  choices: [false, true]
+  validator: >-
+    {% if 'rest-api' in _copier_answers and _copier_answers['rest-api'] is not boolean and _copier_answers['rest-api'] not in ['true', 'True', 'TRUE', 'false', 'False', 'FALSE', 'yes', 'Yes', 'YES', 'no', 'No', 'NO', 'on', 'On', 'ON', 'off', 'Off', 'OFF'] %}Answer true or false.{% elif 'rest-api' in _copier_answers and (_copier_answers['rest-api'] is true or _copier_answers['rest-api'] in ['true', 'True', 'TRUE', 'yes', 'Yes', 'YES', 'on', 'On', 'ON']) and not zod %}rest-api requires zod: answer zod=true as well (rest-api is never enabled for you).{% endif %}
+  help: "Add the versioned REST API? (requires zod; adds route handlers under /api/v1 with shared Zod contracts in src/lib/schemas/v1/, RFC 9457 problem-details errors and handler tests; adds no npm dependencies)"
+
+# Computed: never asked and never recorded. A readable name for the hyphenated question above, used in
+# file names and templates; a test checks it always equals the answer. It is also the prerequisite
+# rule's backstop: Copier does not run validators on hidden questions, but it does check `choices`, so
+# `rest-api` without `zod` renders a value outside the choices and generation stops before any file is
+# written, whichever way the answer was given (command line, recorded answer, interactive prompt).
+rest_api:
+  type: yaml
+  when: false
+  choices: [false, true]
+  default: >-
+    {% set raw = _copier_answers['rest-api'] | default(false) %}{% set on = raw is true or (raw is string and raw | lower in ['true', 'yes', 'on']) %}{% if on and not zod %}"rest-api requires zod: answer zod=true as well"{% else %}{{ 'true' if on else 'false' }}{% endif %}
+
 # Computed: never asked and never recorded. Selects the lockfile that matches the selected
 # dependencies. It must agree with tools/features.py; a test renders every valid configuration
 # and checks that the lockfile it receives is the one that module names.

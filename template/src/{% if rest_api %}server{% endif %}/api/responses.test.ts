@@ -1,0 +1,143 @@
+import { describe, expect, it, vi } from "vitest";
+import { z } from "zod";
+import { problemCodes, problemDetailsSchema } from "@/lib/schemas/v1";
+import {
+  guarded,
+  json,
+  methodNotAllowed,
+  problem,
+} from "@/server/api/responses";
+
+const STATUS = {
+  invalid_json: 400,
+  payload_too_large: 413,
+  unsupported_media_type: 415,
+  validation_failed: 422,
+  method_not_allowed: 405,
+  not_found: 404,
+  internal_error: 500,
+} as const;
+
+describe("problem", () => {
+  it.each(problemCodes)(
+    "builds a valid RFC 9457 response for %s",
+    async (code) => {
+      const response = problem(code);
+      const body = problemDetailsSchema.parse(await response.json());
+
+      expect(response.status).toBe(STATUS[code]);
+      expect(response.headers.get("content-type")).toBe(
+        "application/problem+json; charset=utf-8",
+      );
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+      expect(body).toMatchObject({
+        code,
+        status: STATUS[code],
+        type: `urn:problem-type:${code}`,
+      });
+    },
+  );
+
+  it("carries field errors and extra headers, and nothing else", async () => {
+    const response = problem("validation_failed", {
+      errors: [{ path: "title", message: "Title is required" }],
+      headers: { Allow: "POST" },
+    });
+
+    expect(Object.keys(await response.json()).sort()).toEqual([
+      "code",
+      "errors",
+      "status",
+      "title",
+      "type",
+    ]);
+    expect(response.headers.get("allow")).toBe("POST");
+  });
+
+  it("never sets CORS headers", () => {
+    const names = [...problem("not_found").headers.keys()];
+    expect(names.filter((name) => name.startsWith("access-control-"))).toEqual(
+      [],
+    );
+  });
+});
+
+describe("json", () => {
+  const schema = z.strictObject({ ok: z.literal(true) });
+
+  it("sends validated data as application/json", async () => {
+    const response = json(schema, { ok: true });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("content-type")).toBe(
+      "application/json; charset=utf-8",
+    );
+    expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  it("answers with a generic 500 instead of sending data that fails its schema", async () => {
+    const leaky = {
+      ok: true,
+      internalToken: "SECRET-INTERNAL-VALUE",
+    } as unknown as { ok: true };
+    const response = json(schema, leaky);
+    const text = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("content-type")).toContain(
+      "application/problem+json",
+    );
+    expect(text).not.toContain("SECRET-INTERNAL-VALUE");
+    expect(problemDetailsSchema.parse(JSON.parse(text)).code).toBe(
+      "internal_error",
+    );
+  });
+});
+
+describe("methodNotAllowed", () => {
+  it("answers 405 with an Allow header and a problem body", async () => {
+    const response = methodNotAllowed(["GET", "HEAD"])();
+
+    expect(response.status).toBe(405);
+    expect(response.headers.get("allow")).toBe("GET, HEAD");
+    expect(problemDetailsSchema.parse(await response.json()).code).toBe(
+      "method_not_allowed",
+    );
+  });
+});
+
+describe("guarded", () => {
+  it("passes a handler's response through", async () => {
+    const response = await guarded(() => new Response("fine"))(
+      new Request("http://localhost/x"),
+    );
+    expect(await response.text()).toBe("fine");
+  });
+
+  it("turns a thrown error into a generic 500 without leaking it", async () => {
+    const handler = guarded(() => {
+      throw new Error(
+        "db password is hunter2 at /home/app/src/server/secret.ts:12",
+      );
+    });
+    const response = await handler(new Request("http://localhost/x"));
+    const text = await response.text();
+
+    expect(response.status).toBe(500);
+    expect(text).not.toMatch(/hunter2|\/home\/|secret\.ts|stack/);
+    expect(problemDetailsSchema.parse(JSON.parse(text)).code).toBe(
+      "internal_error",
+    );
+  });
+
+  it("does not log the error or the request", async () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await guarded(() => {
+      throw new Error("boom");
+    })(new Request("http://localhost/x"));
+    expect(spy).not.toHaveBeenCalled();
+    spy.mockRestore();
+  });
+});

@@ -120,3 +120,9 @@ def with_numeric_commit(project: Path) -> str:
     )
     path.write_text(text, encoding="utf-8")
     return text
+
+
+def answer_expression(name: str) -> str:
+    """How a validator refers to a question's answer: by name, or through `_copier_answers` when the
+    name is not a valid Jinja variable (the hyphenated `rest-api`)."""
+    return name if name.isidentifier() else f"_copier_answers['{name}']"

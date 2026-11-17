@@ -2,6 +2,19 @@
 
 Versions are git tags (`vMAJOR.MINOR.PATCH`). In 0.x, a minor bump may be breaking.
 
+## Unreleased
+
+- New optional feature **`rest-api`** (default off, requires `zod`, independent of `forms`): versioned
+  route handlers under `src/app/api/v1/` (`GET /api/v1/app-info`, `POST /api/v1/examples/validate`, and a
+  standard 404 for unknown `/api/v1` paths), request and response schemas in `src/lib/schemas/v1/`,
+  RFC 9457 problem-details errors with stable codes, server-only helpers in `src/server/api/`,
+  `docs/api-v1.md`, and tests that call handlers with `Request` objects inside `npm run check`. It adds
+  **no npm dependency** and no lockfile: `lock_key` and every `locks/*.json` are unchanged. `rest-api=true`
+  without `zod=true` is rejected before anything is written, in every flow. With it off, output is
+  byte-identical to v0.3.0 for every selection of `zod` and `forms` (and `cache_components`).
+- New computed (never recorded) question `rest_api`, a readable alias for the hyphenated `rest-api`
+  that also carries the prerequisite rule's backstop (see `docs/features.md`).
+
 ## 0.3.0
 
 Optional Forms feature, plus two maintenance corrections. Additive: with `forms` off, the output is

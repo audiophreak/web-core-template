@@ -1,0 +1,41 @@
+import { z } from "zod";
+
+/**
+ * Error format of API v1: RFC 9457 problem details (`application/problem+json`).
+ *
+ * `code` is the stable, machine-readable identifier clients branch on; `title` and `detail` are for
+ * people and may change wording. Within v1 codes are only ever added, never renamed or removed.
+ * Responses never carry stack traces, file paths, secrets or the request body.
+ */
+export const problemCodes = [
+  "invalid_json",
+  "payload_too_large",
+  "unsupported_media_type",
+  "validation_failed",
+  "method_not_allowed",
+  "not_found",
+  "internal_error",
+] as const;
+
+export const problemCodeSchema = z.enum(problemCodes);
+
+export const problemFieldErrorSchema = z.strictObject({
+  /** Dot-separated path of the invalid field, e.g. `tags.0`; empty for the whole body. */
+  path: z.string().max(100),
+  message: z.string().max(200),
+});
+
+export const problemDetailsSchema = z.strictObject({
+  /** A URN that identifies the problem type; it is not a link to fetch. */
+  type: z.string().regex(/^urn:problem-type:[a-z_]+$/),
+  title: z.string().min(1).max(100),
+  status: z.int().min(400).max(599),
+  detail: z.string().max(200).optional(),
+  code: problemCodeSchema,
+  /** Field-level errors; present for `validation_failed`, at most 10. */
+  errors: z.array(problemFieldErrorSchema).max(10).optional(),
+});
+
+export type ProblemCode = z.infer<typeof problemCodeSchema>;
+export type ProblemFieldError = z.infer<typeof problemFieldErrorSchema>;
+export type ProblemDetails = z.infer<typeof problemDetailsSchema>;

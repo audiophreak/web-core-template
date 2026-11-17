@@ -1,0 +1,110 @@
+import type { z } from "zod";
+import {
+  problemDetailsSchema,
+  type ProblemCode,
+  type ProblemFieldError,
+} from "@/lib/schemas/v1";
+
+/**
+ * Server-only helpers that build every API v1 response. Nothing outside `src/server` and
+ * `src/app/api` may import this module (a test enforces it), so no client bundle reaches it.
+ *
+ * Every body is checked against an explicit schema before it is sent, and no response carries CORS
+ * headers: the API answers same-origin callers only until an origin policy is chosen on purpose.
+ */
+const PROBLEMS: Record<ProblemCode, { status: number; title: string }> = {
+  invalid_json: { status: 400, title: "The request body is not valid JSON" },
+  payload_too_large: { status: 413, title: "The request body is too large" },
+  unsupported_media_type: {
+    status: 415,
+    title: "Send the body as application/json",
+  },
+  validation_failed: { status: 422, title: "The request is not valid" },
+  method_not_allowed: { status: 405, title: "This method is not allowed here" },
+  not_found: { status: 404, title: "No such API resource" },
+  internal_error: {
+    status: 500,
+    title: "The server could not complete the request",
+  },
+};
+
+const COMMON_HEADERS = { "X-Content-Type-Options": "nosniff" } as const;
+
+// Used if even a problem body fails its own schema: fixed text, nothing derived from the request.
+const FALLBACK_BODY = JSON.stringify({
+  type: "urn:problem-type:internal_error",
+  title: PROBLEMS.internal_error.title,
+  status: 500,
+  code: "internal_error",
+});
+
+type ProblemInit = {
+  detail?: string;
+  errors?: ProblemFieldError[];
+  headers?: Record<string, string>;
+};
+
+/** An RFC 9457 `application/problem+json` response with a stable `code` and no internals. */
+export function problem(code: ProblemCode, init: ProblemInit = {}): Response {
+  const { status, title } = PROBLEMS[code];
+  const body = problemDetailsSchema.safeParse({
+    type: `urn:problem-type:${code}`,
+    title,
+    status,
+    code,
+    ...(init.detail ? { detail: init.detail } : {}),
+    ...(init.errors?.length ? { errors: init.errors } : {}),
+  });
+  return new Response(
+    body.success ? JSON.stringify(body.data) : FALLBACK_BODY,
+    {
+      status: body.success ? status : 500,
+      headers: {
+        ...COMMON_HEADERS,
+        ...init.headers,
+        "Content-Type": "application/problem+json; charset=utf-8",
+        "Cache-Control": "no-store",
+      },
+    },
+  );
+}
+
+/**
+ * A JSON response whose body is validated against `schema` first. If the data does not match, the
+ * caller gets a generic 500 problem: the validation issues (which could quote data) are never sent.
+ */
+export function json<S extends z.ZodType>(
+  schema: S,
+  data: z.input<S>,
+  init: { status?: number; headers?: Record<string, string> } = {},
+): Response {
+  const parsed = schema.safeParse(data);
+  if (!parsed.success) return problem("internal_error");
+  return new Response(JSON.stringify(parsed.data), {
+    status: init.status ?? 200,
+    headers: {
+      ...COMMON_HEADERS,
+      ...init.headers,
+      "Content-Type": "application/json; charset=utf-8",
+    },
+  });
+}
+
+/** A handler for the methods a route does not support; Next.js would answer with an empty 405. */
+export function methodNotAllowed(allowed: readonly string[]) {
+  return (): Response =>
+    problem("method_not_allowed", { headers: { Allow: allowed.join(", ") } });
+}
+
+/** Turns anything a handler throws into a generic 500 problem; the error itself is never sent. */
+export function guarded(
+  handler: (request: Request) => Response | Promise<Response>,
+) {
+  return async (request: Request): Promise<Response> => {
+    try {
+      return await handler(request);
+    } catch {
+      return problem("internal_error");
+    }
+  };
+}

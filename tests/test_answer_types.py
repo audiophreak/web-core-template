@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from conftest import GIT_TEST_ENV, REGISTRY, TEMPLATE_ROOT, render
+from conftest import GIT_TEST_ENV, REGISTRY, TEMPLATE_ROOT, answer_expression, render
 
 COPIER_YML = TEMPLATE_ROOT / "copier.yml"
 QUESTIONS = yaml.safe_load(COPIER_YML.read_text())
@@ -51,7 +51,7 @@ def test_every_boolean_question_uses_the_strict_form(name: str) -> None:
     question = QUESTIONS[name]
     assert question["type"] == "yaml", f"{name}: `type: bool` is coerced before validation"
     assert question["choices"] == [False, True]
-    assert f"{name} is not boolean" in question["validator"]
+    assert f"{answer_expression(name)} is not boolean" in question["validator"]
     assert question.get("help")
 
 
@@ -119,7 +119,7 @@ def _legacy(copier_yml: str) -> str:
     for name in BOOLEAN_QUESTIONS:
         copier_yml, count = re.subn(
             r"  type: yaml  # a strict boolean[^\n]*\n(  default: (?:true|false)\n)  choices: \[false, true\]\n"
-            rf"  validator: >-\n    \{{% if {name} is not boolean %\}}[^\n]*\n",
+            rf"  validator: >-\n    \{{% if [^\n]*?{re.escape(answer_expression(name))} is not boolean[^\n]*\n",
             r"  type: bool\n\1",
             copier_yml,
         )
