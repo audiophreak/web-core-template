@@ -17,7 +17,7 @@ from pathlib import Path
 import pytest
 
 from conftest import render
-from dbharness import LocalApp, install, require_docker, run
+from dbharness import LocalApp, install, plain, require_docker, run
 from test_database_postgres import app, installed, running  # noqa: F401  (fixtures shared with Gate A)
 
 pytestmark = pytest.mark.db
@@ -34,6 +34,7 @@ def installed_full(template_repo: Path, tmp_path_factory: pytest.TempPathFactory
 
 
 def _summary(output: str) -> tuple[int, int]:
+    output = plain(output)
     passed = re.search(r"Tests\s+(?:\d+ failed \| )?(\d+) passed", output)
     failed = re.search(r"Tests\s+(\d+) failed", output)
     return int(passed.group(1)) if passed else 0, int(failed.group(1)) if failed else 0
@@ -58,7 +59,7 @@ def test_the_suite_also_passes_with_every_other_feature_enabled(installed_full: 
         result = local.npm("test:db", timeout=900)
         passed, failed = _summary(result.stdout + result.stderr)
         assert result.returncode == 0 and failed == 0, (result.stdout + result.stderr)[-3000:]
-        assert "Test Files  4 passed (4)" in result.stdout + result.stderr and passed >= 55  # the repository-handler composition test is the fourth file
+        assert "Test Files  4 passed (4)" in plain(result.stdout + result.stderr) and passed >= 55  # the repository-handler composition test is the fourth file
         assert _test_databases(local) == "0"
     finally:
         local.destroy()

@@ -17,7 +17,7 @@ import pytest
 import yaml
 
 from conftest import render
-from dbharness import LocalApp, install, require_docker
+from dbharness import LocalApp, install, listeners, require_docker
 
 pytestmark = pytest.mark.db
 
@@ -199,8 +199,9 @@ def test_the_database_is_published_on_loopback_only(running: LocalApp) -> None:
         with socket.socket() as sock:
             sock.settimeout(3)
             assert sock.connect_ex((lan, running.port)) != 0, "the database must not be reachable on a non-loopback address"
-    listeners = subprocess.run(["lsof", "-nP", f"-iTCP:{running.port}", "-sTCP:LISTEN"], capture_output=True, text=True, check=False).stdout
-    assert "127.0.0.1" in listeners and "*:" not in listeners
+    listening = listeners(running.port)
+    assert "127.0.0.1" in listening, listening  # a listener on loopback exists...
+    assert not re.search(r"(\*|0\.0\.0\.0|\[::\]|::):%d\b" % running.port, listening), listening  # ...and none on any other interface
 
 
 def test_the_status_command_reports_health_and_migrations_without_a_credential(running: LocalApp) -> None:

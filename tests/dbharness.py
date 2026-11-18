@@ -8,6 +8,7 @@ created is ever torn down, together with its volume.
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import socket
 import subprocess
@@ -15,6 +16,23 @@ import uuid
 from pathlib import Path
 
 import pytest
+
+
+def plain(text: str) -> str:
+    """Terminal output without colour codes: vitest and the CLIs colour their output when CI is set."""
+    return re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", text)
+
+
+def listeners(port: int) -> str:
+    """Addresses listening on `port`: `ss` on Linux (no privileges needed), `lsof` on macOS."""
+    for command in (["ss", "-ltnH", f"sport = :{port}"], ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"]):
+        try:
+            result = subprocess.run(command, capture_output=True, text=True, timeout=15, check=False)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout
+    return ""
 
 
 def docker_ready() -> bool:

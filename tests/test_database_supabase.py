@@ -24,7 +24,7 @@ from pathlib import Path
 import pytest
 
 from conftest import render
-from dbharness import free_port, install, require_docker, run
+from dbharness import free_port, install, plain, require_docker, run
 
 pytestmark = pytest.mark.db
 
@@ -165,7 +165,7 @@ def test_the_stack_started_and_applied_the_canonical_migration(stack: SupabaseAp
 
 def test_migrating_again_applies_nothing_and_the_lock_still_guards_history(stack: SupabaseApp) -> None:
     again = stack.npm("db:migrate")
-    assert again.returncode == 0 and '"applied":[]' in again.stdout
+    assert again.returncode == 0 and ('"applied":[]' in again.stdout or "up to date" in again.stdout.lower())  # the CLI words an empty run differently by environment
     assert stack.psql("select count(*) from supabase_migrations.schema_migrations") == "1"
     path = stack.root / "supabase/migrations/20260101000000_create_items.sql"
     original = path.read_text()
@@ -196,7 +196,7 @@ def test_a_new_migration_is_applied_by_the_cli_in_order_and_keeps_data(stack: Su
 
 def test_the_same_repository_tests_pass_against_the_supabase_database(stack: SupabaseApp) -> None:
     result = stack.npm("test:db", env={"DATABASE_URL": stack.database_url})
-    output = result.stdout + result.stderr
+    output = plain(result.stdout + result.stderr)
     assert result.returncode == 0, output[-3000:]
     assert "Test Files  3 passed (3)" in output and re.search(r"Tests\s+5\d passed", output)
     assert stack.psql("select count(*) from pg_database where datname like 'app_test_%'") == "0"
