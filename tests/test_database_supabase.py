@@ -308,7 +308,7 @@ def test_switching_provider_changes_no_application_code(template_repo: Path, tmp
 
     pg, sb = files(tmp_path / "pg"), files(tmp_path / "sb")
     differing = {name for name in pg.keys() | sb.keys() if pg.get(name) != sb.get(name)}
-    provider_files = {".copier-answers.yml", ".env.example", "compose.yaml", "supabase/config.toml", "scripts/db/cli.mjs", "package.json", "package-lock.json", "README.md", "AGENTS.md", "docs/database.md", ".github/workflows/ci.yml"}
+    provider_files = {".copier-answers.yml", ".env.example", ".gitignore", "compose.yaml", "supabase/config.toml", "scripts/db/cli.mjs", "package.json", "package-lock.json", "README.md", "AGENTS.md", "docs/database.md", ".github/workflows/ci.yml"}
     assert differing <= provider_files, sorted(differing - provider_files)
     assert {"compose.yaml", "supabase/config.toml", "scripts/db/cli.mjs", ".env.example"} <= differing  # the provider tooling really differs
     for shared in ("src", "scripts/db/migrations.mjs", "supabase/migrations", "vitest.db.config.mts"):
