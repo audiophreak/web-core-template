@@ -1,0 +1,93 @@
+import { describe, expect, it } from "vitest";
+import {
+  createItemRequestSchema,
+  itemListResponseSchema,
+  itemResponseSchema,
+  listItemsQuerySchema,
+  sessionListResponseSchema,
+  sessionResponseSchema,
+  updateItemRequestSchema,
+} from "@/lib/schemas/v1";
+
+/**
+ * The protected endpoints' contract, pinned like the rest of v1: within v1 changes are additive. The
+ * responses carry public fields only: no owner id, password hash or session token has a place in them.
+ */
+const id = "5b0d7c2e-3f0a-4b8e-9d51-0f6f9c9a1d11";
+const now = "2026-03-01T12:00:00.000Z";
+
+describe("API v1 items and sessions contract", () => {
+  it.each([
+    [
+      "item response",
+      itemResponseSchema,
+      ["id", "title", "body", "createdAt", "updatedAt"],
+    ],
+    [
+      "item list response",
+      itemListResponseSchema,
+      ["items", "limit", "offset"],
+    ],
+    ["create item request", createItemRequestSchema, ["title", "body"]],
+    ["update item request", updateItemRequestSchema, ["title", "body"]],
+    ["list items query", listItemsQuerySchema, ["limit", "offset"]],
+    ["session response", sessionResponseSchema, ["user", "session"]],
+    ["session list response", sessionListResponseSchema, ["sessions"]],
+  ])("keeps the fields of the %s", (_name, schema, fields) => {
+    expect(Object.keys(schema.shape)).toEqual(fields);
+  });
+
+  it("accepts the documented shapes and rejects extra members", () => {
+    const item = { id, title: "t", body: "", createdAt: now, updatedAt: now };
+    expect(itemResponseSchema.safeParse(item).success).toBe(true);
+    expect(
+      itemResponseSchema.safeParse({ ...item, owner_id: "u" }).success,
+    ).toBe(false);
+    expect(
+      itemResponseSchema.safeParse({ ...item, createdAt: "yesterday" }).success,
+    ).toBe(false);
+    const session = {
+      user: { id: "u1", email: "a@b.test", name: "a" },
+      session: { expiresAt: now },
+    };
+    expect(sessionResponseSchema.safeParse(session).success).toBe(true);
+    expect(
+      sessionResponseSchema.safeParse({ ...session, token: "t" }).success,
+    ).toBe(false);
+    expect(
+      sessionListResponseSchema.safeParse({
+        sessions: [
+          {
+            id: "s",
+            createdAt: now,
+            expiresAt: now,
+            userAgent: null,
+            current: true,
+            token: "t",
+          },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("parses list queries as bounded whole numbers with defaults", () => {
+    expect(listItemsQuerySchema.parse({})).toEqual({ limit: 20, offset: 0 });
+    expect(listItemsQuerySchema.parse({ limit: "100", offset: "5" })).toEqual({
+      limit: 100,
+      offset: 5,
+    });
+    for (const bad of [
+      { limit: "0" },
+      { limit: "101" },
+      { limit: "1.5" },
+      { limit: "" },
+      { offset: "-1" },
+      { offset: "1e3" },
+      { limit: "1", other: "x" },
+    ])
+      expect(
+        listItemsQuerySchema.safeParse(bad).success,
+        JSON.stringify(bad),
+      ).toBe(false);
+  });
+});

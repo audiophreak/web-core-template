@@ -2,7 +2,24 @@ import "server-only";
 import { Pool, type QueryResult, type QueryResultRow } from "pg";
 import { loadDatabaseConfig } from "./config";
 
-/** Anything that can run a query: the pool, or the connection of a transaction. */
+{% if auth %}/** The schema Better Auth's tables live in (supabase/migrations/): its queries name tables without a schema. */
+const AUTH_SCHEMA = "app_auth";
+
+/**
+ * Adds `-c search_path=app_auth` to the connection's startup options. Application SQL always names
+ * its schema (`app.items`), so the search path only has to serve Better Auth.
+ */
+export function withSearchPath(connectionString: string): string {
+  const url = new URL(connectionString);
+  const options = [
+    url.searchParams.get("options"),
+    `-c search_path=${AUTH_SCHEMA}`,
+  ];
+  url.searchParams.set("options", options.filter(Boolean).join(" "));
+  return url.toString();
+}
+
+{% endif %}/** Anything that can run a query: the pool, or the connection of a transaction. */
 export type Queryable = {
   query: (
     text: string,
@@ -24,7 +41,7 @@ export function getPool(): Pool {
   if (!holder[POOL]) {
     const config = loadDatabaseConfig();
     const pool = new Pool({
-      connectionString: config.connectionString,
+      connectionString: {% if auth %}withSearchPath(config.connectionString){% else %}config.connectionString{% endif %},
       max: config.poolMax,
       connectionTimeoutMillis: config.connectTimeoutMs,
       idleTimeoutMillis: 30_000,

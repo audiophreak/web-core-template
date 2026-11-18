@@ -1,0 +1,38 @@
+import "server-only";
+import type { ItemResponse } from "@/lib/schemas/v1";
+import type { Item } from "@/lib/schemas";
+import { problem } from "@/server/api/responses";
+import { DatabaseError } from "@/server/db/errors";
+
+/** The public shape of an item: no owner id, timestamps as ISO 8601 strings. */
+export function toItemResponse(item: Item): ItemResponse {
+  return {
+    id: item.id,
+    title: item.title,
+    body: item.body,
+    createdAt: item.createdAt.toISOString(),
+    updatedAt: item.updatedAt.toISOString(),
+  };
+}
+
+/**
+ * Maps the database errors a handler expects to API problems: a missing or foreign item is 404 (the two
+ * are indistinguishable on purpose), a duplicate title is a field error about the caller's own data, and
+ * invalid input is a validation problem. Anything else is rethrown and becomes the generic 500.
+ */
+export function itemProblem(error: unknown): Response {
+  if (error instanceof DatabaseError) {
+    if (error.code === "not_found") return problem("not_found");
+    if (error.code === "conflict")
+      return problem("validation_failed", {
+        errors: [
+          {
+            path: "title",
+            message: "You already have an item with this title",
+          },
+        ],
+      });
+    if (error.code === "invalid_input") return problem("validation_failed");
+  }
+  throw error;
+}

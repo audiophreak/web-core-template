@@ -1,0 +1,80 @@
+import "server-only";
+import { betterAuth } from "better-auth";
+import type { Pool } from "pg";
+import { getPool } from "@/server/db/pool";
+import { loadAuthConfig, type AuthConfig } from "./config";
+
+/** Better Auth's table names are fixed by the migration in supabase/migrations/, never created at runtime. */
+const SESSION_DAYS = 7;
+
+/**
+ * Builds the Better Auth instance for a pool and a validated configuration. It never changes the
+ * schema (there is no runtime migration: the tables come from supabase/migrations/), keeps CSRF and
+ * origin checks on, reads sessions from the database on every request (no cookie cache, so sign-out
+ * and revocation take effect at once), and stores rate limits in the database so they hold across
+ * server instances.
+ */
+export function createAuth(
+  pool: Pool,
+  config: AuthConfig,
+  overrides: { rateLimit?: boolean } = {},
+) {
+  return betterAuth({
+    appName: "web-core-app",
+    database: pool,
+    secret: config.secret,
+    baseURL: config.baseURL,
+    trustedOrigins: [...config.trustedOrigins],
+    telemetry: { enabled: false },
+    emailAndPassword: {
+      enabled: true,
+      disableSignUp: !config.signUpEnabled,
+      // No mail service exists here: verification and reset links cannot be delivered (docs/auth.md).
+      requireEmailVerification: false,
+      minPasswordLength: 12,
+      maxPasswordLength: 128,
+      revokeSessionsOnPasswordReset: true,
+    },
+    session: {
+      expiresIn: SESSION_DAYS * 24 * 60 * 60,
+      updateAge: 24 * 60 * 60,
+      cookieCache: { enabled: false },
+    },
+    rateLimit: {
+      enabled: overrides.rateLimit ?? true,
+      storage: "database",
+      window: 60,
+      max: 60,
+    },
+    advanced: {
+      useSecureCookies: config.secureCookies,
+      defaultCookieAttributes: { httpOnly: true, sameSite: "lax" },
+      disableCSRFCheck: false,
+      disableOriginCheck: false,
+      ipAddress: {
+        // A client-supplied header is not evidence of the client's address. Unless the deployment names
+        // the header its own trusted proxy sets, no address is trusted and the limits share one bucket
+        // per route (slower for everybody, never bypassable by spoofing).
+        ipAddressHeaders: config.ipHeader ? [config.ipHeader] : [],
+        trustedProxies: [...config.trustedProxies],
+      },
+    },
+  });
+}
+
+export type Auth = ReturnType<typeof createAuth>;
+
+const AUTH = Symbol.for("web-core.auth.instance");
+type Holder = { [AUTH]?: Auth };
+
+/** The shared instance, created on first use (never at import time, so a build needs no secrets). */
+export function getAuth(): Auth {
+  const holder = globalThis as Holder;
+  holder[AUTH] ??= createAuth(getPool(), loadAuthConfig());
+  return holder[AUTH];
+}
+
+/** Forgets the shared instance (tests): the next getAuth() reads the environment again. */
+export function resetAuth(): void {
+  (globalThis as Holder)[AUTH] = undefined;
+}

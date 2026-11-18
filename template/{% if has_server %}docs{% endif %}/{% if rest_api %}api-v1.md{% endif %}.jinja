@@ -40,7 +40,30 @@ Unknown fields are rejected. The body must be `application/json` and at most 8 K
 { "valid": true, "titleLength": 16, "priority": "high", "tagCount": 2 }
 ```
 
-## Errors
+{% if auth %}## Protected endpoints
+
+These need a signed-in user: the session cookie that Better Auth sets (see `docs/auth.md`). Without one
+they answer `401 unauthenticated`. Each user reaches only their own items; another user's item is
+`404`, the same as one that does not exist. State-changing requests that carry an `Origin` header must
+name a trusted origin (`403 origin_not_allowed` otherwise).
+
+| Method | Path                | Request body             | Success                    | Errors                                 |
+| ------ | ------------------- | ------------------------ | -------------------------- | -------------------------------------- |
+| GET    | `/api/v1/session`   | none                     | 200, `SessionResponse`     | 401, 405                               |
+| GET    | `/api/v1/sessions`  | none                     | 200, `SessionListResponse` | 401, 405                               |
+| GET    | `/api/v1/items`     | query: `limit`, `offset` | 200, `ItemListResponse`    | 401, 405, 422                          |
+| POST   | `/api/v1/items`     | `CreateItemRequest`      | 201, `ItemResponse`        | 400, 401, 403, 405, 413, 415, 422      |
+| GET    | `/api/v1/items/:id` | none                     | 200, `ItemResponse`        | 401, 404, 405                          |
+| PATCH  | `/api/v1/items/:id` | `UpdateItemRequest`      | 200, `ItemResponse`        | 400, 401, 403, 404, 405, 413, 415, 422 |
+| DELETE | `/api/v1/items/:id` | none                     | 204                        | 401, 403, 404, 405                     |
+
+An item is `{ "id", "title", "body", "createdAt", "updatedAt" }` (timestamps are ISO 8601 strings).
+`CreateItemRequest` is `{ "title", "body"? }` and `UpdateItemRequest` is `{ "title"?, "body"? }` with at
+least one of them; a title is 1 to 100 characters, a body at most 2000. `limit` is 1 to 100 (default 20) and `offset` 0 or more. A title must be unique among the caller's own items. Responses never
+contain the owner, a password hash or a session token. Signing up, in and out is Better Auth's own
+`/api/auth/*` (`docs/auth.md`).
+
+{% endif %}## Errors
 
 Every error is an RFC 9457 problem document with the media type `application/problem+json`:
 
@@ -61,7 +84,9 @@ path, a secret or the submitted values.
 | Status | `code`                   | Meaning                                                |
 | ------ | ------------------------ | ------------------------------------------------------ |
 | 400    | `invalid_json`           | The body is empty, not valid UTF-8 or not valid JSON   |
-| 404    | `not_found`              | No such resource under `/api/v1/`                      |
+{% if auth %}| 401    | `unauthenticated`        | There is no valid session (see `docs/auth.md`)         |
+| 403    | `origin_not_allowed`     | A state-changing request came from an untrusted origin |
+{% endif %}| 404    | `not_found`              | No such resource under `/api/v1/`                      |
 | 405    | `method_not_allowed`     | The method is not supported here (see `Allow`)         |
 | 413    | `payload_too_large`      | The body is over the limit                             |
 | 415    | `unsupported_media_type` | The body is not `application/json` (see `Accept-Post`) |

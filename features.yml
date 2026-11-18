@@ -25,3 +25,8 @@ features:
     requires: [zod]
     conflicts: []
     npm: true
+  auth:
+    summary: Better Auth email/password authentication with owner-scoped, row-level-secured data and a protected REST API, on either database provider
+    requires: [zod, rest_api, database]
+    conflicts: []
+    npm: true

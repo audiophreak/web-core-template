@@ -36,6 +36,12 @@ Versions are written in `template/package.json.jinja`. The reference lockfile is
 5. `uv run pytest`: the tests fail if a pin is not exact, a lockfile is out of sync, orphaned or
    not additive, and the end-to-end tests run `npm ci` and `npm run check` for every configuration.
 
+## Refresh Better Auth
+
+See "Upgrading Better Auth" in `docs/features.md`: bump the pin, refresh the locks, review the packages, and let
+`schema.db.test.ts` decide whether the schema needs a new migration. It is a security dependency: read its release
+notes, and never skip the Docker tests.
+
 ## Release a version
 
 Releases go through a pull request and are tagged only after CI has passed on the merge commit, so
@@ -51,7 +57,7 @@ a tag never points at an unverified commit.
    configuration is identical to the previous release; `uv run python tools/refresh_locks.py
    --check` must report every lockfile up to date.
    Run the Docker tests too (`uv run pytest -m db`, with Docker running) before a release that touches the
-   database feature: they start real PostgreSQL containers and a real Supabase stack.
+   database and auth features: they start real PostgreSQL containers and a real Supabase stack.
    For releases after v0.3.0 no allowance is needed (v0.3.0 already contains the `.prettierignore`
    line): the comparison must report the default, `zod` and `zod`+`forms` configurations identical. For
    the first release after v0.2.0 the one intended difference is the added

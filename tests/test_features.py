@@ -36,8 +36,10 @@ def sel(*names: str) -> frozenset[str]:
 # ----------------------------------------------------------------------- the real registry
 
 
-def test_the_real_registry_is_valid_and_lists_zod_forms_rest_api_and_database() -> None:
-    assert sorted(REGISTRY) == ["database", "forms", "rest_api", "zod"]
+def test_the_real_registry_is_valid_and_lists_zod_forms_rest_api_database_and_auth() -> None:
+    assert sorted(REGISTRY) == ["auth", "database", "forms", "rest_api", "zod"]
+    auth = REGISTRY["auth"]
+    assert auth.requires == ("zod", "rest_api", "database") and auth.conflicts == () and auth.npm is True and not auth.choices and auth.summary
     database = REGISTRY["database"]
     assert database.choices == ("postgres", "supabase") and database.requires == ("zod",) and database.conflicts == ()
     assert database.npm is True and database.summary
@@ -92,8 +94,12 @@ def test_the_supported_matrix_of_the_real_registry() -> None:
         ["database=supabase", "forms", "zod"],
         ["database=supabase", "rest_api", "zod"],
         ["forms", "rest_api", "zod"],
+        ["auth", "database=postgres", "rest_api", "zod"],
+        ["auth", "database=supabase", "rest_api", "zod"],
         ["database=postgres", "forms", "rest_api", "zod"],
         ["database=supabase", "forms", "rest_api", "zod"],
+        ["auth", "database=postgres", "forms", "rest_api", "zod"],
+        ["auth", "database=supabase", "forms", "rest_api", "zod"],
     ]
     # rest_api changes no npm dependency, so it shares the lock of the configuration without it; the two
     # database providers need different packages (only Supabase adds its CLI), so they have their own locks
@@ -105,11 +111,19 @@ def test_the_supported_matrix_of_the_real_registry() -> None:
         "forms+zod": [["forms", "zod"], ["forms", "rest_api", "zod"]],
         "database-postgres+forms+zod": [["database=postgres", "forms", "zod"], ["database=postgres", "forms", "rest_api", "zod"]],
         "database-supabase+forms+zod": [["database=supabase", "forms", "zod"], ["database=supabase", "forms", "rest_api", "zod"]],
+        "auth+database-postgres+zod": [["auth", "database=postgres", "rest_api", "zod"]],
+        "auth+database-supabase+zod": [["auth", "database=supabase", "rest_api", "zod"]],
+        "auth+database-postgres+forms+zod": [["auth", "database=postgres", "forms", "rest_api", "zod"]],
+        "auth+database-supabase+forms+zod": [["auth", "database=supabase", "forms", "rest_api", "zod"]],
     }
     assert f.problems(frozenset({"forms"}), REGISTRY) == ["forms requires zod"]
     assert f.problems(frozenset({"rest_api"}), REGISTRY) == ["rest_api requires zod"]
     assert f.problems(frozenset({"forms", "rest_api"}), REGISTRY) == ["forms requires zod", "rest_api requires zod"]
     assert f.problems(frozenset({"database=postgres"}), REGISTRY) == ["database requires zod"]
+    assert f.problems(frozenset({"auth"}), REGISTRY) == ["auth requires database", "auth requires rest_api", "auth requires zod"]
+    assert f.problems(frozenset({"auth", "zod", "rest_api"}), REGISTRY) == ["auth requires database"]
+    assert f.problems(frozenset({"auth", "zod", "database=supabase"}), REGISTRY) == ["auth requires rest_api"]
+    assert f.problems(frozenset({"auth", "zod", "rest_api", "database=postgres"}), REGISTRY) == []
     assert f.problems(frozenset({"database=oracle", "zod"}), REGISTRY) == ["'database=oracle' is not a valid selection of database"]
     assert f.problems(frozenset({"database", "zod"}), REGISTRY) == ["'database' is not a valid selection of database"]
     assert f.problems(frozenset({"database=postgres", "database=supabase", "zod"}), REGISTRY) == ["a feature is selected more than once"]

@@ -23,7 +23,9 @@ describe("API v1 contract", () => {
       "method_not_allowed",
       "not_found",
       "internal_error",
-    ]);
+{% if auth %}      "unauthenticated",
+      "origin_not_allowed",
+{% endif %}    ]);
   });
 
   it.each([

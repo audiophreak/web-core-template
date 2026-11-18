@@ -15,3 +15,17 @@ export {
   type ValidateExampleRequest,
   type ValidateExampleResponse,
 } from "./validate-example";
+{% if auth %}export {
+  createItemRequestSchema,
+  itemListResponseSchema,
+  itemResponseSchema,
+  listItemsQuerySchema,
+  updateItemRequestSchema,
+  type ItemResponse,
+} from "./items";
+export {
+  sessionListResponseSchema,
+  sessionResponseSchema,
+  type SessionResponse,
+} from "./session";
+{% endif %}

@@ -1,0 +1,8 @@
+import { createAuthClient } from "better-auth/react";
+
+/**
+ * The browser's view of authentication: sign up, sign in, sign out and the current session, all
+ * through /api/auth on this origin. It holds no secret and no server code; the server modules in
+ * src/server/auth are not importable from here (a test checks it).
+ */
+export const authClient = createAuthClient();

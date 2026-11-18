@@ -2,7 +2,7 @@
 
 A PostgreSQL database for local development, with version-controlled SQL migrations and a small typed, server-only data-access layer. This project uses the **{{ database }}** provider{% if database == 'postgres' %}: PostgreSQL 17 in Docker Compose{% else %}: the local Supabase stack, started by the pinned Supabase CLI{% endif %}.
 
-**Not production-ready on its own.** There is no authentication or authorization yet. The sample code is for local development and for learning the pattern, and nothing in the application's routes reaches the database (a test enforces it). See [Security boundaries](#security-boundaries-and-limitations).
+{% if auth %}**Local development only.** Sign-in, sessions, the least-privilege runtime role and the owner-scoped data are described in [auth.md](auth.md), which also lists what a public deployment still has to provide. See [Security boundaries](#security-boundaries-and-limitations).{% else %}**Not production-ready on its own.** There is no authentication or authorization yet. The sample code is for local development and for learning the pattern, and nothing in the application's routes reaches the database (a test enforces it). See [Security boundaries](#security-boundaries-and-limitations).{% endif %}
 
 ## How the pieces fit
 
@@ -59,7 +59,8 @@ npm run test:db     # runs the real-database tests against the stack's database
 - `npm run db:down`: stops the containers. **The data is kept.**
 - `npm run db:verify`: checks the migration files against `supabase/migrations.lock/`, offline.
 - `npm run db:lock`: records new migrations in the lock.
-{% if database == 'postgres' %}- `npm run db:logs`: the last lines of the database log.
+{% if auth %}- `npm run db:roles`: lets the `app_runtime` role log in with the password in `DATABASE_RUNTIME_URL` (`npm run db:migrate` does it for you; run it again after `supabase db reset`).
+{% endif %}{% if database == 'postgres' %}- `npm run db:logs`: the last lines of the database log.
 {% endif %}- `npm run test:db`: the real-database tests (see [Tests](#tests)).
 
 There is deliberately no command that deletes data. {% if database == 'postgres' %}To discard the local database completely, run `docker compose --env-file .env.local down --volumes` yourself, knowing that it deletes the named volume.{% else %}To recreate the local database from the migrations, run `npx supabase db reset`, knowing that it discards the local data. Never point it at a remote project.{% endif %}
@@ -68,7 +69,9 @@ There is deliberately no command that deletes data. {% if database == 'postgres'
 
 The application and the tools read the environment; `.env.local` is loaded by Next.js and by `npm run db:*`. It is git-ignored: never commit it, and never put a production credential in it. `.env.example` shows the shape.
 
-- `DATABASE_URL` (required): a `postgresql://` URL. Server side only: it must never be exposed to the browser, so never use a `NEXT_PUBLIC_` name for it.
+{% if auth %}- `DATABASE_URL` (required by the tools): the **administrative** connection (the database owner). Migrations, the tests and `npm run db:*` use it; the running application never does.
+- `DATABASE_RUNTIME_URL` (required by the application): the connection of the least-privilege role `app_runtime`, see [auth.md](auth.md). `npm run db:init` generates its random password into `.env.local`; on an existing project it adds the missing lines and changes nothing else.
+- Both are server-side only and must never be exposed to the browser: never use a `NEXT_PUBLIC_` name for either.{% else %}- `DATABASE_URL` (required): a `postgresql://` URL. Server side only: it must never be exposed to the browser, so never use a `NEXT_PUBLIC_` name for it.{% endif %}
 - `DATABASE_POOL_MAX`: connections in the pool, 1 to 20 (default 5).
 - `DATABASE_CONNECT_TIMEOUT_MS`: how long to wait for a connection, 100 to 60000 (default 5000).
 - `DATABASE_STATEMENT_TIMEOUT_MS`: the longest a statement may run, 100 to 300000 (default 10000).
@@ -100,18 +103,32 @@ A schema change that must keep existing data (renaming a column, for example) is
 
 Use the repository from server code only.
 
+{% if auth %}Every repository function takes an **owner scope**: a transaction in which the database knows which user is asking. You obtain it from `withPrincipal`, with a principal that a valid session produced, and never from a user id you were handed.
+
 ```ts
+import { requirePrincipal, withPrincipal } from "@/server/auth";
+import { createItem, listItems } from "@/server/items/repository";
+
+const principal = await requirePrincipal(request); // throws AuthenticationError without a valid session
+const recent = await withPrincipal(principal, async (scope) => {
+  await createItem(scope, { title: "First item" });
+  return listItems(scope, { limit: 10 });
+});
+```
+
+See [auth.md](auth.md) for how the scope, the policies and the role fit together.
+{% else %}```ts
 import { createItem, listItems } from "@/server/items/repository";
 
 const created = await createItem({ title: "First item" });
 const recent = await listItems({ limit: 10 });
 ```
-
+{% endif %}
 Rules the code follows, and that new code should follow:
 
 - **Validate at the boundary.** Repository functions parse their input with the schemas in `src/lib/schemas/item.ts` and return validated objects. Invalid input throws `DatabaseError` with code `invalid_input` before any SQL runs.
 - **Parameterized SQL only.** Values always travel as parameters (`$1`, `$2`). Column names come from fixed lists in the code, never from a caller.
-- **Transactions own one connection.** Wrap related changes in `withTransaction` and pass the `tx` it gives you to every call that belongs to the transaction. A call made without `tx` runs outside the transaction.
+{% if auth %}- **Transactions own one connection.** `withPrincipal` is one transaction: everything inside it commits together or rolls back together, and the scope it gives you is the only handle on that connection.{% else %}- **Transactions own one connection.** Wrap related changes in `withTransaction` and pass the `tx` it gives you to every call that belongs to the transaction. A call made without `tx` runs outside the transaction.
 
 ```ts
 import { withTransaction } from "@/server/db";
@@ -122,7 +139,7 @@ await withTransaction(async (tx) => {
   await updateItem(item.id, { body: "Ready" }, tx);
 });
 ```
-
+{% endif %}
 - **Errors are safe to handle.** Every failure is a `DatabaseError` with a `code` (`not_found`, `conflict`, `constraint_violation`, `invalid_input`, `timeout`, `unavailable`, `unexpected`) and a fixed message. It never contains the SQL, its parameters, the connection string or row data, so it is safe to log or to turn into an API problem.
 - **Everything is bounded.** Connecting, running a statement and sitting idle inside a transaction all have timeouts, and listing is limited to 100 rows per call.
 - **Use it in pages with Suspense.** With Cache Components, database data is request-time data, so read it inside a `Suspense` boundary after `await connection()` from `next/server`.
@@ -137,14 +154,17 @@ To add a table: write a migration, add its schemas to `src/lib/schemas/`, add a 
 ## Security boundaries and limitations
 
 - **Server only.** Database modules start with `import "server-only"`, so the production build refuses to bundle them into client code. A test also reads the source and fails if a client component can reach them.
-- **No route uses the database yet.** There is no authentication, so no route handler or page in this project reads or writes the database, and a test fails if one imports the data layer. Do not add one before authentication and authorization exist: a route that mutates data without them would be open to everyone.
-{% if database == 'supabase' %}- **The sample table is not exposed through the Supabase Data API.** It lives in the `app` schema, which `supabase/config.toml` does not list under `api.schemas`; row level security is enabled with no policy; and the migration revokes everything from `anon`, `authenticated` and `service_role`. Do not add `app` to the exposed schemas without reviewed grants and policies. Never put a service-role key in code that runs in the browser.
+{% if auth %}- **Routes reach the database only through authentication.** The protected routes under `/api/v1/items` are wrapped in `withAuthentication` and read and write through `withPrincipal`; a test fails if a route handler imports the pool or `withTransaction` directly. A new route that changes data must follow the same pattern: see [auth.md](auth.md).
+{% else %}- **No route uses the database yet.** There is no authentication, so no route handler or page in this project reads or writes the database, and a test fails if one imports the data layer. Do not add one before authentication and authorization exist: a route that mutates data without them would be open to everyone.
+{% endif %}{% if database == 'supabase' %}- **The sample table is not exposed through the Supabase Data API.** It lives in the `app` schema, which `supabase/config.toml` does not list under `api.schemas`; row level security is enabled with no policy; and the migration revokes everything from `anon`, `authenticated` and `service_role`. Do not add `app` to the exposed schemas without reviewed grants and policies. Never put a service-role key in code that runs in the browser.
 - **The local Supabase stack listens on every network interface.** The CLI publishes its ports that way, and the stack uses documented default passwords and keys. `npm run db:up` therefore checks how Docker published the ports and, if other machines could connect, stops the stack (keeping its data) and explains why. To use it, make Docker publish on loopback only (Docker Desktop: Settings, Docker Engine, add `"ip": "127.0.0.1"`; Linux: `"ip"` in `daemon.json`), or on a network you fully trust set `SUPABASE_ALLOW_LAN_EXPOSURE=true`.
 {% else %}- **The database port is bound to loopback.** Compose publishes it on `127.0.0.1` only, and the password is random and local to your machine.
 {% endif %}- **Local development only.** Nothing here provisions or modifies a remote database, and the migration tool refuses a non-local `DATABASE_URL`. This provider is not authorized for production use.
-- **Deferred to authentication and authorization.** Identifying users, sessions, deciding who may read or change each record (including row level security policies), a least-privilege runtime database role, protected API routes, and rate limiting are not implemented.
+{% if auth %}- **The application is not the owner.** It connects as `app_runtime`, which cannot create or alter anything, bypass row level security or reach another schema, and it refuses to do its database work if it finds itself connected with an administrative role. The administrative connection exists for migrations and tests only.
+- **Still yours to provide for a public deployment:** see "Not ready for the public internet" in [auth.md](auth.md).
+{% else %}- **Deferred to authentication and authorization.** Identifying users, sessions, deciding who may read or change each record (including row level security policies), a least-privilege runtime database role, protected API routes, and rate limiting are not implemented.
 - **Postgres superuser.** For simplicity the application connects as the database owner. A deployed application should use a role that can only read and write the tables it needs.
-
+{% endif %}
 ## Changing provider
 
 Switching an established project between PostgreSQL and Supabase is **not** a template upgrade. It changes the tooling and the place where your data lives, and moving data between databases is not automated. `devkit upgrade` refuses it. To switch, generate a new project with the other provider and move your migrations and data deliberately (for example with `pg_dump` and `psql`), then verify the result. Your application code in `src/` does not change, because it does not depend on the provider.

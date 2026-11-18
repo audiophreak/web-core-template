@@ -253,7 +253,8 @@ without `zod` before anything is written. Boolean features are unchanged.
 
 Valid combinations: `database` needs `zod` and is independent of `forms`, `rest_api` and
 `cache_components`. Together with them there are thirteen supported configurations and seven lockfiles
-(`rest_api` adds no dependency, so it shares the lock of the configuration without it).
+(`rest_api` adds no dependency, so it shares the lock of the configuration without it). With `auth` (below)
+there are seventeen and eleven.
 
 | What | postgres | supabase |
 | ---- | -------- | -------- |
@@ -296,16 +297,16 @@ missing or out-of-order migration, rolls a failing one back, and refuses a non-l
 repository) start with `import "server-only"`, so the production build refuses to bundle them into client
 code. The `server-only` package is a dependency of this feature (the REST API feature has no dependencies
 and uses a directory and import-graph test instead). An import-graph test is kept as a second layer, and a
-third test fails if a route handler imports the data layer: **no shipped route uses the database,**
-because authentication does not exist yet. The sample table lives in schema `app`, which no HTTP API serves.
+third test fails if a route handler imports the data layer: **without `auth` no shipped route uses the
+database,** because authentication does not exist. The sample table lives in schema `app`, which no HTTP API serves.
 
 ### What the Supabase provider does and does not claim
 
 It is a working local stack, verified against a running one: the canonical migration applies, the repository
 tests pass against its database, the Data API refuses the protected schema even for a forged
 `service_role` token, API roles hold no privilege, and the schema equals standalone PostgreSQL's. It is
-**not** production-authorized: Auth, row level security policies, a least-privilege runtime role and
-protected API access belong to the authentication work package.
+**not** production-authorized. Authentication, row level security, a least-privilege runtime role and
+protected API access are the separate `auth` feature, which works on this provider and on `postgres` alike.
 
 The Supabase CLI publishes its ports on **every** network interface and the local stack uses documented
 default credentials. The template cannot change that, so `npm run db:up` asks Docker how the ports were
@@ -320,3 +321,64 @@ tooling underneath the project (a test pins this) while the old database's data 
 longer managed by the project, and moving data between databases is not automated. A Copier validator
 cannot see the previous answer, so the template cannot refuse it; `devkit upgrade` does. Generate a new
 project with the other provider and move the data deliberately.
+
+## The `auth` feature
+
+`auth` is a boolean that requires three other features: `zod`, `rest_api` and a `database` of **either**
+provider (`requires: [zod, rest_api, database]` in `features.yml`; a choice feature is satisfied by any
+value). Its validator rejects a missing prerequisite before anything is written and never enables one.
+`forms` and `cache_components` are independent. With it there are four more configurations and four more
+locks (`auth+database-<provider>[+forms]+zod`), eleven in all, under the cap of sixteen.
+
+### The decision: Better Auth on PostgreSQL for both providers
+
+Better Auth runs on `pg`, and the application's data access is already provider-independent, so
+authentication is too. Supabase is a PostgreSQL and local-services provider here; its Auth service stays
+disabled (`[auth] enabled = false`) and is not used. The alternative, Supabase Auth on one provider and
+something else on the other, would mean two session systems, two authorization models and two sets of
+behaviour to keep equivalent. A test runs the same scripted scenario against both providers and requires
+identical outcomes, and another requires every file under `src/` and every migration to be byte-identical.
+
+### Dependencies and how they were reviewed
+
+One new dependency: `better-auth` 1.7.15, exact. It is the newest **stable** release that was at least two
+weeks old when chosen (1.7.25 was the newest, two days old; there are 1.8 betas, which are not used). MIT
+licensed; its 20 packages in the lock (the `@better-auth/*` adapters and core, `better-call`,
+`@better-fetch/fetch`, `jose`, `kysely`, `nanostores`, `@noble/*`, `defu`, `rou3`, `set-cookie-parser`,
+`@standard-schema/spec`) are all MIT and none has an install script; a test pins the exact set, so a
+change shows up in review. Its prisma, drizzle and mongo adapters are installed but unused, because
+Better Auth lists them as dependencies. No ORM is introduced.
+
+Better Auth declares optional peers on frameworks, ORMs and test runners, `vitest` among them. Our
+`vitest` satisfies that range, so npm links the project's development tools to the production
+dependency and `npm audit --omit=dev` reports their advisories (a ReDoS in `picomatch`, reachable only
+from the build tooling). The generated project therefore has an `.npmrc` with `legacy-peer-deps=true`,
+and `tools/refresh_locks.py` produces the locks under that same setting (npm reads the project's
+`.npmrc`). Every package Better Auth actually needs is a direct dependency, so nothing is lost; a test checks
+that the tooling is `dev` in the lock.
+
+### What changes in a generated project, and what must not
+
+- `src/server/auth/` (server only), `src/lib/auth-client.ts` (the browser's client), the `/api/auth` handler,
+  the protected `/api/v1` routes and their schemas, two migrations, `scripts/db/roles.mjs`, `docs/auth.md`.
+- The database layer reads `DATABASE_RUNTIME_URL` instead of `DATABASE_URL`, and its pool sets
+  `search_path=app_auth` for Better Auth's tables. The owner-scoped repository replaces the sample one, and
+  the unprotected `repository-handler.db.test.ts` is not generated.
+- With `auth` off all of this is absent and every file is byte-identical to the previous release (check with
+  `tools/compare_release.py v0.5.1 --set zod=true --set rest_api=true --set database=postgres`).
+
+### Upgrading Better Auth
+
+Change the version in `package.json.jinja`, run `uv run python tools/refresh_locks.py` and review the new
+packages, licenses and install scripts (the pinned set in `tests/test_auth_feature.py` fails until updated on
+purpose). Then run the Docker tests: `schema.db.test.ts` asks Better Auth's own schema tooling what the new
+version would still create or add after the migrations, and fails if the answer is not nothing. A version
+that needs more schema gets a **new reviewed migration**, never an edit of a committed one. Re-read the release
+notes for changes to cookies, origin checks, rate limiting and the session API, which the tests exercise.
+
+### Disabling it, and changing provider
+
+Neither is an upgrade. A Copier validator cannot see the previous answer, so the template cannot refuse
+`auth=false` on a project that has it (a test pins that raw `copier update` removes the generated files and
+leaves the user's work and the database alone); `devkit upgrade` refuses it. The generated `docs/auth.md`
+lists the manual steps.

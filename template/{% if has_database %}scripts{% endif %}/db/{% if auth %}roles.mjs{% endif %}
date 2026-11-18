@@ -1,0 +1,78 @@
+// The application's database role. The migrations create `app_runtime` without a login or a password
+// (supabase/migrations/); this gives it the password from DATABASE_RUNTIME_URL, on the same server the
+// administrative connection reaches. It is the only place a runtime credential is written to the
+// database, and it never prints one.
+import pg from "pg";
+
+export const RUNTIME_ROLE = "app_runtime";
+
+export class RoleError extends Error {}
+
+/** Checks a runtime URL against the administrative one and returns the password to set. */
+export function runtimeCredentials(runtimeUrl, adminUrl) {
+  let runtime;
+  let admin;
+  try {
+    runtime = new URL(runtimeUrl);
+    admin = new URL(adminUrl);
+  } catch {
+    throw new RoleError("DATABASE_RUNTIME_URL and DATABASE_URL must be URLs");
+  }
+  const user = decodeURIComponent(runtime.username);
+  const password = decodeURIComponent(runtime.password);
+  if (user !== RUNTIME_ROLE)
+    throw new RoleError(
+      `DATABASE_RUNTIME_URL must use the ${RUNTIME_ROLE} role`,
+    );
+  if (!/^[A-Za-z0-9_-]{32,128}$/.test(password))
+    throw new RoleError(
+      "DATABASE_RUNTIME_URL needs a random password of 32 to 128 letters, digits, - or _ (npm run db:init creates one)",
+    );
+  if (runtime.host !== admin.host || runtime.pathname !== admin.pathname)
+    throw new RoleError(
+      "DATABASE_RUNTIME_URL must name the same server and database as DATABASE_URL",
+    );
+  return { user, password };
+}
+
+/** Lets `app_runtime` log in with the password from `runtimeUrl`. The migrations must have run. */
+export async function provisionRuntimeRole({ adminUrl, runtimeUrl }) {
+  const { user, password } = runtimeCredentials(runtimeUrl, adminUrl);
+  const client = new pg.Client({ connectionString: adminUrl });
+  await client.connect();
+  try {
+    const exists = await client.query(
+      "select 1 from pg_roles where rolname = $1",
+      [user],
+    );
+    if (exists.rows.length === 0)
+      throw new RoleError(
+        `the ${user} role does not exist yet: apply the migrations first (npm run db:migrate)`,
+      );
+    // ALTER ROLE takes no parameters, so format() quotes the identifier and the literal. The attributes
+    // (no superuser, no CREATEROLE and so on) were fixed when the migration created the role; the
+    // application verifies them again at run time, and a Supabase owner may not touch them anyway.
+    const statement = await client.query(
+      "select format('alter role %I with login password %L connection limit 20', $1::text, $2::text) as sql",
+      [user, password],
+    );
+    await client.query(statement.rows[0].sql);
+  } finally {
+    await client.end();
+  }
+}
+
+/** What the server says about the role (attributes only, never a credential). */
+export async function runtimeRoleStatus(adminUrl) {
+  const client = new pg.Client({ connectionString: adminUrl });
+  await client.connect();
+  try {
+    const result = await client.query(
+      "select rolcanlogin, rolsuper, rolcreaterole, rolcreatedb, rolbypassrls from pg_roles where rolname = $1",
+      [RUNTIME_ROLE],
+    );
+    return result.rows[0] ?? null;
+  } finally {
+    await client.end();
+  }
+}

@@ -6,8 +6,16 @@
 // never prints a credential, and it has no command that deletes data.
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
-import {
+{% if auth %}import {
+  appendFileSync,
+  chmodSync,
+  existsSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
+import { parseEnv } from "node:util";
+{% else %}import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
+{% endif %}import {
   LOCK_DIR,
   MIGRATIONS_DIR,
   MigrationError,
@@ -20,7 +28,12 @@ import {
   verifyLock,
   writeLock,
 } from "./migrations.mjs";
-
+{% if auth %}import {
+  RoleError,
+  provisionRuntimeRole,
+  runtimeRoleStatus,
+} from "./roles.mjs";
+{% endif %}
 const PROVIDER = "{{ database }}"; // "postgres" (Docker Compose) or "supabase" (the Supabase CLI's local stack)
 const ENV_FILE = ".env.local";
 
@@ -114,7 +127,36 @@ function databaseUrl() {
   return url;
 }
 
-function verify({ quiet = false } = {}) {
+{% if auth %}/** Lets app_runtime log in with the password in DATABASE_RUNTIME_URL (same local-only rule as migrations). */
+async function provisionRole() {
+  const adminUrl = databaseUrl();
+  assertLocalHost(adminUrl, process.env.MIGRATE_ALLOW_REMOTE === "true");
+  const runtimeUrl = process.env.DATABASE_RUNTIME_URL;
+  if (!runtimeUrl) fail("DATABASE_RUNTIME_URL is not set: run npm run db:init");
+  await provisionRuntimeRole({ adminUrl, runtimeUrl });
+  console.log("runtime role app_runtime is ready");
+}
+
+/** Reports the role's attributes, not its password. */
+async function printRuntimeRole() {
+  try {
+    const role = await runtimeRoleStatus(databaseUrl());
+    console.log(
+      !role
+        ? "runtime role: not created yet (npm run db:migrate)"
+        : role.rolsuper ||
+            role.rolcreaterole ||
+            role.rolcreatedb ||
+            role.rolbypassrls
+          ? "runtime role: UNSAFE attributes (it must not be an administrator)"
+          : `runtime role: app_runtime, ${role.rolcanlogin ? "can log in" : "cannot log in yet (npm run db:migrate)"}`,
+    );
+  } catch (error) {
+    console.log(`runtime role: not reachable (${error.message})`);
+  }
+}
+
+{% endif %}function verify({ quiet = false } = {}) {
   const problems = verifyLock(listMigrations(), readLock());
   if (problems.length) throw new MigrationError(problems.join("\n"));
   if (!quiet)
@@ -122,7 +164,69 @@ function verify({ quiet = false } = {}) {
 }
 
 const commands = {
-  init() {
+{% if auth %}  init() {
+    const port = process.env.POSTGRES_PORT ?? "5432";
+    if (!/^\d{2,5}$/.test(port)) fail("POSTGRES_PORT must be a port number");
+    const existing = existsSync(ENV_FILE)
+      ? readFileSync(ENV_FILE, "utf8")
+      : null;
+    const have = existing ? parseEnv(existing) : {};
+    const lines = [];
+    let adminUrl = have.DATABASE_URL;
+    if (existing === null) {
+      if (PROVIDER === "postgres") {
+        const password = randomBytes(24).toString("hex"); // 192 random bits, generated on this machine only
+        adminUrl = `postgresql://app:${password}@127.0.0.1:${port}/app`;
+        lines.push(
+          "POSTGRES_USER=app",
+          `POSTGRES_PASSWORD=${password}`,
+          "POSTGRES_DB=app",
+          `POSTGRES_PORT=${port}`,
+          `DATABASE_URL=${adminUrl}`,
+        );
+      } else {
+        adminUrl = "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+        lines.push(`DATABASE_URL=${adminUrl}`);
+      }
+    } else if (!adminUrl) {
+      fail(`${ENV_FILE} has no DATABASE_URL: it cannot be completed`);
+    }
+    // The application's own credentials. DATABASE_URL stays the administrative connection (migrations,
+    // tests, tools); the running application uses DATABASE_RUNTIME_URL and never the owner.
+    if (!have.DATABASE_RUNTIME_URL) {
+      const runtime = new URL(adminUrl);
+      runtime.username = "app_runtime";
+      runtime.password = randomBytes(24).toString("hex");
+      lines.push(`DATABASE_RUNTIME_URL=${runtime.toString()}`);
+    }
+    if (!have.BETTER_AUTH_SECRET)
+      lines.push(`BETTER_AUTH_SECRET=${randomBytes(32).toString("hex")}`);
+    if (!have.BETTER_AUTH_URL)
+      lines.push("BETTER_AUTH_URL=http://localhost:3000");
+    if (lines.length === 0)
+      return console.log(`${ENV_FILE} already complete; not changed`);
+    if (existing === null) {
+      writeFileSync(
+        ENV_FILE,
+        `# Created by npm run db:init. Git-ignored: do not commit or share.\n${lines.join("\n")}\n`,
+        { mode: 0o600 },
+      );
+      chmodSync(ENV_FILE, 0o600);
+      return console.log(
+        `created ${ENV_FILE}${PROVIDER === "postgres" ? " with new random passwords and a new authentication secret" : " (the local Supabase stack's defaults, a new runtime password and a new authentication secret)"}`,
+      );
+    }
+    appendFileSync(
+      ENV_FILE,
+      `${existing.endsWith("\n") ? "" : "\n"}# Added by npm run db:init (authentication).\n${lines.join("\n")}\n`,
+    );
+    chmodSync(ENV_FILE, 0o600); // it holds secrets now: only ever tightens the mode
+    console.log(
+      `added ${lines.map((line) => line.split("=")[0]).join(", ")} to ${ENV_FILE}; existing values were not changed`,
+    );
+  },
+
+{% else %}  init() {
     if (existsSync(ENV_FILE))
       return console.log(`${ENV_FILE} already exists; not changed`);
     const port = process.env.POSTGRES_PORT ?? "5432";
@@ -153,7 +257,7 @@ const commands = {
     );
   },
 
-  up() {
+{% endif %}  up() {
     if (PROVIDER === "postgres") {
       process.exitCode = compose("up", "--detach", "--wait");
       return;
@@ -200,7 +304,8 @@ const commands = {
       // The Supabase CLI keeps the migration history (supabase_migrations.schema_migrations), not this tool.
       process.exitCode =
         supabase("status") || supabase("migration", "list", "--local");
-      return;
+{% if auth %}      await printRuntimeRole();
+{% endif %}      return;
     }
     process.exitCode = compose("ps");
     try {
@@ -214,7 +319,8 @@ const commands = {
         `database: not reachable or not migrated by this tool (${error.message})`,
       );
     }
-  },
+{% if auth %}    await printRuntimeRole();
+{% endif %}  },
 
   logs() {
     if (PROVIDER !== "postgres")
@@ -228,7 +334,8 @@ const commands = {
     verify({ quiet: true }); // never apply a history that no longer matches the lock
     if (PROVIDER === "supabase") {
       process.exitCode = supabase("migration", "up");
-      return;
+{% if auth %}      if (process.exitCode === 0) await provisionRole();
+{% endif %}      return;
     }
     const url = databaseUrl();
     assertLocalHost(url, process.env.MIGRATE_ALLOW_REMOTE === "true");
@@ -241,8 +348,13 @@ const commands = {
         ? `${result.applied.length} migration(s) applied`
         : "already up to date",
     );
+{% if auth %}    await provisionRole();
+{% endif %}  },
+{% if auth %}
+  async roles() {
+    await provisionRole();
   },
-
+{% endif %}
   verify() {
     verify();
   },
@@ -264,6 +376,7 @@ if (!command || !(command in commands)) {
 try {
   await commands[command]();
 } catch (error) {
-  if (error instanceof MigrationError) fail(error.message);
+{% if auth %}  if (error instanceof MigrationError || error instanceof RoleError)
+    fail(error.message);{% else %}  if (error instanceof MigrationError) fail(error.message);{% endif %}
   throw error;
 }

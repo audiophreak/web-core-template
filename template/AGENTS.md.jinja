@@ -47,11 +47,19 @@ The application's requirements are not defined yet. Do not introduce architectur
   report errors with `problem()` from `src/server/api/responses.ts`. Server code stays in
   `src/server/` and `src/app/api/`; a test fails if a client component reaches it. See `docs/api-v1.md`.{% endif %}{% if has_database %}
 - Database access is server-only: modules in `src/server/db/` and `src/server/items/` start with
-  `import "server-only"`, use parameterized SQL only, and are never imported by client components or (until
-  authentication exists) by route handlers. Change the schema only by adding a migration in
+  `import "server-only"`, use parameterized SQL only, and are never imported by client components{% if auth %}
+  or, for the pool and transactions, by route handlers{% else %} or (until
+  authentication exists) by route handlers{% endif %}. Change the schema only by adding a migration in
   `supabase/migrations/` (never edit a committed one) and running `npm run db:lock`. Validate every input
   with a Zod schema from `src/lib/schemas/`, pass `tx` from `withTransaction` to every call that belongs to a
-  transaction, and never log a connection string. See `docs/database.md`.{% endif %}{% endif %}
+  transaction, and never log a connection string. See `docs/database.md`.{% endif %}{% if auth %}
+- Authentication is Better Auth in `src/server/auth/`. A route that needs a user is wrapped in
+  `withAuthentication`; data of a user is read and written only through `withPrincipal` and a repository
+  that takes its scope (never a user id from the request). The application's database role is
+  `app_runtime`: never run it as the owner, never grant it more than a table needs, and give every table
+  that holds user data an `owner_id` with row level security. Never disable the origin or CSRF checks, trust
+  a client-supplied header for the client address, commit a secret, or answer 403 where a missing resource
+  (404) would not reveal that it exists. See `docs/auth.md`.{% endif %}{% endif %}
 - Enforce authorization on the server, close to the data, never only in the UI.
 - Keep secrets in environment variables; never commit them, log them, or expose them to
   the browser (only `NEXT_PUBLIC_*` variables reach the client — never put secrets there).

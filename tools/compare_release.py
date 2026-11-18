@@ -103,8 +103,11 @@ def parse_set(pairs: list[str]) -> dict[str, object]:
     answers: dict[str, object] = {}
     for pair in pairs:
         name, _, value = pair.partition("=")
+        if name == "database" and value in ("none", "postgres", "supabase"):
+            answers[name] = value  # the choice feature: its value is a provider, not a boolean
+            continue
         if value not in ("true", "false"):
-            raise SystemExit(f"--set {pair!r}: use NAME=true or NAME=false")
+            raise SystemExit(f"--set {pair!r}: use NAME=true or NAME=false (database=none|postgres|supabase)")
         answers[name] = value == "true"
     return answers
 
@@ -112,7 +115,7 @@ def parse_set(pairs: list[str]) -> dict[str, object]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("tag", help="the release tag to compare against, e.g. v0.1.0")
-    parser.add_argument("--set", dest="options", action="append", default=[], metavar="NAME=true|false")
+    parser.add_argument("--set", dest="options", action="append", default=[], metavar="NAME=true|false|PROVIDER")
     parser.add_argument("--allow-change", action="append", default=[], metavar="PATH",
                         help="accept a content difference in exactly this file (shown, never silent)")  # fmt: skip
     args = parser.parse_args(argv)

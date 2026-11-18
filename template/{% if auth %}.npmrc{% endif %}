@@ -1,0 +1,6 @@
+# Better Auth declares optional peer dependencies on frameworks, ORMs and test runners (vitest among
+# them) that this project does not use. Without this setting npm links the installed development
+# tools to those optional peers, marks them as needed in production and reports their advisories in
+# `npm audit --omit=dev`. Every package Better Auth really needs is a direct dependency. Keep the
+# setting in sync with how package-lock.json was produced: `npm ci` fails if they disagree.
+legacy-peer-deps=true

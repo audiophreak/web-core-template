@@ -27,13 +27,28 @@ skip counts, with reasons).
 (`github_sha`). The evidence is tied to the *branch tip you reviewed* (`commit_under_test`, also in
 the artifact and suite names). Both are recorded.
 
+## Disk space
+
+The end-to-end tests install an application each (with `node_modules`), and the authentication apps are the
+largest. `tmp_path_retention_policy = "failed"` in `pyproject.toml` makes pytest remove the directory of every test
+that passed as soon as it finishes and keep only the failed ones, so a run does not fill the runner's disk (an
+earlier run of this suite did, and the runner stopped with "No space left on device" without a test failing).
+
 ## The database job
 
 The tests that need Docker (marker `db`: PostgreSQL containers and the local Supabase stack) run in their own
 job, `database`, once on Python 3.14, so the matrix jobs stay fast. The job sets `REQUIRE_DOCKER=1`, which makes
 those tests **fail, not skip,** when Docker is missing. Its artifact is `test-reports-database-<commit>`, with the
 same files and the same quiet token scan as the others; no database dump or connection string is ever written
-to the reports, and the tests use throwaway containers, volumes and passwords created for the run.
+to the reports, and the tests use throwaway containers, volumes and passwords created for the run. The job
+includes `tests/test_auth_database.py`, which runs the authentication feature against a real PostgreSQL and a
+real local Supabase stack through a production build and a `next start` server: it never prints a secret, and
+it searches the build output, the server logs and every response for the secrets of the run.
+
+The upgrade tests in `tests/test_auth_upgrade.py` and the byte-identity tests in `tests/test_auth_feature.py` start
+from the real published `v0.5.1`, taken from the repository's tags. The matrix jobs therefore check out the full
+history (`fetch-depth: 0`), so they run in CI; in a shallow checkout they would skip with the reason "the published
+tag is not in this checkout", which is why a local count can differ.
 
 ## Retrieving and reading it
 

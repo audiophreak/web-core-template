@@ -33,6 +33,10 @@ yarn-error.log*
 # env files (can opt-in for committing if needed)
 .env*
 {% if has_database %}!.env.example
+{% endif %}{% if database == 'supabase' %}
+# Supabase CLI local state (it is created the first time the local stack starts)
+supabase/.branches
+supabase/.temp
 {% endif %}
 # vercel
 .vercel

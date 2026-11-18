@@ -15,7 +15,9 @@ export const problemCodes = [
   "method_not_allowed",
   "not_found",
   "internal_error",
-] as const;
+{% if auth %}  "unauthenticated",
+  "origin_not_allowed",
+{% endif %}] as const;
 
 export const problemCodeSchema = z.enum(problemCodes);
 
