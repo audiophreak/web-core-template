@@ -161,6 +161,8 @@ def test_the_stack_started_and_applied_the_canonical_migration(stack: SupabaseAp
     assert stack.psql("show server_version").startswith("17.")
     status = stack.npm("db:status")
     assert status.returncode == 0 and "network exposure" in status.stdout
+    # the migration state comes from the CLI's own history; this tool's PostgreSQL bookkeeping does not exist here
+    assert "20260101000000" in plain(status.stdout) and "migrations applied" not in status.stdout and "pending" not in status.stdout
 
 
 def test_migrating_again_applies_nothing_and_the_lock_still_guards_history(stack: SupabaseApp) -> None:

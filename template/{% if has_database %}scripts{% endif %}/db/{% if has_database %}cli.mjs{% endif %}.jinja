@@ -197,14 +197,16 @@ const commands = {
           ? `network exposure: REACHABLE FROM OTHER MACHINES (${exposed.length} port(s))`
           : "network exposure: loopback only",
       );
+      // The Supabase CLI keeps the migration history (supabase_migrations.schema_migrations), not this tool.
+      process.exitCode =
+        supabase("status") || supabase("migration", "list", "--local");
+      return;
     }
-    process.exitCode =
-      PROVIDER === "postgres" ? compose("ps") : supabase("status");
+    process.exitCode = compose("ps");
     try {
-      const url = databaseUrl();
-      const status = await migrationStatus({ connectionString: url });
+      const status = await migrationStatus({ connectionString: databaseUrl() });
       console.log(
-        `migrations applied (PostgreSQL bookkeeping): ${status.applied.length}, pending: ${status.pending.length}`,
+        `migrations applied: ${status.applied.length}, pending: ${status.pending.length}`,
       );
       for (const problem of status.problems) console.log(`problem: ${problem}`);
     } catch (error) {

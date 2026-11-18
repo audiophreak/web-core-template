@@ -207,7 +207,7 @@ def test_the_database_is_published_on_loopback_only(running: LocalApp) -> None:
 def test_the_status_command_reports_health_and_migrations_without_a_credential(running: LocalApp) -> None:
     assert running.npm("db:migrate").returncode == 0
     status = running.npm("db:status")
-    assert status.returncode == 0 and "healthy" in status.stdout and "migrations applied" in status.stdout
+    assert status.returncode == 0 and "healthy" in status.stdout and "migrations applied: 1, pending: 0" in status.stdout
     assert running.env_file()["POSTGRES_PASSWORD"] not in status.stdout + status.stderr
 
 
