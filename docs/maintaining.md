@@ -50,6 +50,8 @@ a tag never points at an unverified commit.
    `uv run python tools/compare_release.py <previous tag>` must report that the default
    configuration is identical to the previous release; `uv run python tools/refresh_locks.py
    --check` must report every lockfile up to date.
+   Run the Docker tests too (`uv run pytest -m db`, with Docker running) before a release that touches the
+   database feature: they start real PostgreSQL containers and a real Supabase stack.
    For releases after v0.3.0 no allowance is needed (v0.3.0 already contains the `.prettierignore`
    line): the comparison must report the default, `zod` and `zod`+`forms` configurations identical. For
    the first release after v0.2.0 the one intended difference is the added

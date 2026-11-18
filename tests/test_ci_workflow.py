@@ -37,7 +37,7 @@ def test_every_action_is_pinned_to_a_full_commit_sha_with_a_version_comment() ->
     text, workflow = _load()
     steps = [s for job in workflow["jobs"].values() for s in job["steps"]]
     uses = [s["uses"] for s in steps if "uses" in s]
-    assert len(uses) == 4 and any(u.startswith("actions/upload-artifact@") for u in uses)
+    assert len(uses) == 8 and sum(u.startswith("actions/upload-artifact@") for u in uses) == 2  # four per job
     for reference in uses:
         assert re.fullmatch(r"[\w./-]+@[0-9a-f]{40}", reference), reference
         assert re.search(re.escape(reference) + r" # v\d+\.\d+\.\d+", text), reference
@@ -53,16 +53,19 @@ def test_checkout_does_not_persist_credentials() -> None:
 
 def test_the_job_has_a_timeout_and_runs_the_documented_commands() -> None:
     _, workflow = _load()
-    (job,) = workflow["jobs"].values()
-    assert 0 < job["timeout-minutes"] <= 60
-    runs = [s["run"] for s in job["steps"] if "run" in s and "name" not in s]
-    assert runs[1:] == ["uv sync --locked"]
-    assert re.fullmatch(r"python -m pip install uv==\d+\.\d+\.\d+", runs[0])  # exact uv version
+    assert list(workflow["jobs"]) == ["test", "database"]
+    for job in workflow["jobs"].values():
+        assert 0 < job["timeout-minutes"] <= 60
+    job = workflow["jobs"]["test"]
+    for each in workflow["jobs"].values():
+        runs = [s["run"] for s in each["steps"] if "run" in s and "name" not in s]
+        assert runs[1:] == ["uv sync --locked"]
+        assert re.fullmatch(r"python -m pip install uv==\d+\.\d+\.\d+", runs[0])  # exact uv version
 
 
 def test_the_matrix_covers_the_supported_python_floor_and_the_newest_tested_version() -> None:
     _, workflow = _load()
-    (job,) = workflow["jobs"].values()
+    job = workflow["jobs"]["test"]
     assert job["strategy"]["fail-fast"] is False  # a failure on one version must not hide the other
     versions = job["strategy"]["matrix"]["python-version"]
     project = (TEMPLATE_ROOT / "pyproject.toml").read_text()
@@ -77,9 +80,9 @@ def test_the_matrix_covers_the_supported_python_floor_and_the_newest_tested_vers
 
 def test_node_comes_from_the_templates_own_pin() -> None:
     _, workflow = _load()
-    (job,) = workflow["jobs"].values()
-    node = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/setup-node@"))
-    assert node["with"] == {"node-version-file": "template/.nvmrc"}
+    for job in workflow["jobs"].values():
+        node = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/setup-node@"))
+        assert node["with"] == {"node-version-file": "template/.nvmrc"}
     assert (TEMPLATE_ROOT / "template" / ".nvmrc").is_file()
 
 
@@ -88,13 +91,12 @@ def test_node_comes_from_the_templates_own_pin() -> None:
 REPORT_STEPS = ("Record run metadata", "Check reports contain no token-shaped strings", "Summarize results", "Upload test reports")
 
 
-def _job() -> dict:
-    (job,) = _load()[1]["jobs"].values()
-    return job
+def _job(name: str = "test") -> dict:
+    return _load()[1]["jobs"][name]
 
 
-def _step(name_start: str) -> dict:
-    return next(s for s in _job()["steps"] if s.get("name", "").startswith(name_start))
+def _step(name_start: str, job: str = "test") -> dict:
+    return next(s for s in _job(job)["steps"] if s.get("name", "").startswith(name_start))
 
 
 def _names() -> list[str]:
@@ -207,3 +209,37 @@ def test_the_artifact_is_unique_per_python_and_commit_bounded_and_fails_if_empty
     assert "matrix.python-version" in with_["name"] and "env.EVIDENCE_COMMIT" in with_["name"]
     assert with_["if-no-files-found"] == "error"
     assert 1 <= with_["retention-days"] <= 30
+
+
+# ------------------------------------------------------------------ the database job (real Docker tests)
+
+
+def test_the_matrix_job_leaves_out_the_docker_tests_and_the_database_job_runs_exactly_those() -> None:
+    assert '-m "not db"' in _step("Test")["run"]
+    database = _step("Test", "database")["run"]
+    assert "-m db" in database and '"not db"' not in database
+    assert "--junitxml=reports/junit.xml" in database and "tee reports/pytest-output.txt" in database
+    assert "-database" in database and "${EVIDENCE_COMMIT}" in database  # its own suite name, tied to the commit
+
+
+def test_the_database_job_requires_docker_instead_of_skipping_and_runs_once_on_the_newest_python() -> None:
+    job = _job("database")
+    assert job["env"]["REQUIRE_DOCKER"] == "1" and "strategy" not in job and job["runs-on"] == "ubuntu-latest"
+    setup = next(s for s in job["steps"] if s.get("uses", "").startswith("actions/setup-python@"))
+    assert setup["with"]["python-version"] == "3.14"
+    assert job["env"]["EVIDENCE_COMMIT"] == _job()["env"]["EVIDENCE_COMMIT"]
+    assert "continue-on-error" not in _load()[0]
+
+
+def test_the_database_job_keeps_the_evidence_steps_and_an_artifact_of_its_own() -> None:
+    names = [s.get("name", "") for s in _job("database")["steps"]]
+    assert [n for n in names if n in REPORT_STEPS] == list(REPORT_STEPS)
+    for name in REPORT_STEPS:
+        assert _step(name, "database")["if"].startswith("always()")
+    upload = _step("Upload test reports", "database")["with"]
+    assert upload["name"] == "test-reports-database-${{ env.EVIDENCE_COMMIT }}" and upload["path"] == "reports/"
+    assert upload["name"] != _step("Upload test reports")["with"]["name"]  # the two jobs never collide on an artifact name
+    assert 1 <= upload["retention-days"] <= 30 and upload["if-no-files-found"] == "error"
+    scan = _step("Check reports contain no token-shaped strings", "database")["run"]
+    assert "grep -r -q" in scan and "exit 1" in scan  # the same quiet scan, and a hit blocks the upload
+    assert _step("Upload test reports", "database")["if"] == "always() && steps.scan.outcome == 'success'"

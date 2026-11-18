@@ -133,7 +133,10 @@ def test_a_modified_migration_is_refused_before_anything_runs_and_again_by_the_d
     assert offline.returncode == 1 and "was modified after it was locked" in offline.stderr
     assert running.npm("db:verify").returncode == 1
     # Even with the lock rewritten to match, the checksum recorded by the database still refuses it.
-    running.node('import { listMigrations, readLock, writeLock } from "./scripts/db/migrations.mjs"; const lock = readLock(); const m = listMigrations()[0]; lock.migrations[m.version].sha256 = m.checksum; writeLock(lock);')
+    import hashlib
+
+    lock = running.root / "supabase/migrations.lock/20260101000000_create_items.sha256"
+    lock.write_text(hashlib.sha256(path.read_text().replace("\r\n", "\n").encode()).hexdigest() + "\n")
     refused = running.npm("db:migrate")
     assert refused.returncode == 1 and "was modified after it was applied" in refused.stderr
     assert running.psql("select count(*) from app.items") == "0" and "tampered" not in running.psql("select pg_get_viewdef('pg_tables'::regclass)")

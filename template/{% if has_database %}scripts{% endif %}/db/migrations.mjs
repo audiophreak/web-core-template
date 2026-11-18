@@ -1,19 +1,28 @@
 // Plain SQL migrations: one canonical source (supabase/migrations) for both providers.
 //
 // - Files are `<14-digit version>_<name>.sql` and run in version order, each in its own transaction.
-// - supabase/migrations.lock.json records every migration's SHA-256 so that editing a migration that
-//   was already committed is caught offline (`npm run db:verify`, and the unit tests in `npm run check`).
+// - supabase/migrations.lock/ holds one <version>_<name>.sha256 file per migration, recording its SHA-256,
+//   so that editing a migration that was already committed is caught offline (`npm run db:verify`, and
+//   the unit tests in `npm run check`). One file per migration, never rewritten, so two branches that add
+//   migrations (or a template upgrade and your own work) never conflict in a shared file.
 // - With PostgreSQL, applied versions and checksums are recorded in public.schema_migrations; an applied
 //   migration that changed or disappeared, or a new migration older than an applied one, stops the run.
 //   With Supabase the CLI keeps its own history (supabase_migrations.schema_migrations) and applies the
 //   same files; only the lock check applies to both.
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 import pg from "pg";
 
 export const MIGRATIONS_DIR = "supabase/migrations";
-export const LOCK_FILE = "supabase/migrations.lock.json";
+export const LOCK_DIR = "supabase/migrations.lock";
+const LOCK_FILE_NAME = /^(\d{14})_([a-z][a-z0-9_]*)\.sha256$/;
 const FILE_NAME = /^(\d{14})_([a-z][a-z0-9_]*)\.sql$/;
 const ADVISORY_LOCK = 7_240_126; // serializes concurrent runs against one database
 
@@ -55,17 +64,24 @@ export function listMigrations(directory = MIGRATIONS_DIR) {
   return found;
 }
 
-export function readLock(path = LOCK_FILE) {
-  if (!existsSync(path)) return { version: 1, migrations: {} };
-  const lock = JSON.parse(readFileSync(path, "utf8"));
-  if (
-    lock.version !== 1 ||
-    typeof lock.migrations !== "object" ||
-    lock.migrations === null
-  ) {
-    throw new MigrationError(`${path} is not a version 1 migrations lock`);
+export function readLock(directory = LOCK_DIR) {
+  const migrations = {};
+  if (existsSync(directory)) {
+    for (const file of readdirSync(directory)
+      .filter((name) => name.endsWith(".sha256"))
+      .sort()) {
+      const match = LOCK_FILE_NAME.exec(file);
+      if (!match)
+        throw new MigrationError(
+          `${file}: lock files are named <14-digit version>_<name>.sha256`,
+        );
+      const sha256 = readFileSync(join(directory, file), "utf8").trim();
+      if (!/^[0-9a-f]{64}$/.test(sha256))
+        throw new MigrationError(`${file} does not hold a SHA-256`);
+      migrations[match[1]] = { name: match[2], sha256 };
+    }
   }
-  return lock;
+  return { version: 1, migrations };
 }
 
 /** Problems between the migration files and the lock (empty when they agree). */
@@ -110,14 +126,13 @@ export function addToLock(migrations, lock) {
   return { lock: next, added };
 }
 
-export function writeLock(lock, path = LOCK_FILE) {
-  const ordered = Object.fromEntries(
-    Object.entries(lock.migrations).sort(([a], [b]) => a.localeCompare(b)),
-  );
-  writeFileSync(
-    path,
-    `${JSON.stringify({ version: 1, migrations: ordered }, null, 2)}\n`,
-  );
+/** Writes a lock file for every entry that has none. An existing lock file is never rewritten. */
+export function writeLock(lock, directory = LOCK_DIR) {
+  mkdirSync(directory, { recursive: true });
+  for (const [version, { name, sha256 }] of Object.entries(lock.migrations)) {
+    const path = join(directory, `${version}_${name}.sha256`);
+    if (!existsSync(path)) writeFileSync(path, `${sha256}\n`);
+  }
 }
 
 const LOCAL_HOSTS = new Set([

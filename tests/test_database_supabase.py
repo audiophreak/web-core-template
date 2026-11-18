@@ -181,8 +181,7 @@ def test_migrating_again_applies_nothing_and_the_lock_still_guards_history(stack
 def test_a_new_migration_is_applied_by_the_cli_in_order_and_keeps_data(stack: SupabaseApp) -> None:
     stack.psql("insert into app.items (title) values ('kept through a migration')")
     path = stack.root / "supabase/migrations/20260201000000_add_priority.sql"
-    lock = stack.root / "supabase/migrations.lock.json"
-    original_lock = lock.read_text()
+    lock = stack.root / "supabase/migrations.lock/20260201000000_add_priority.sha256"
     path.write_text("alter table app.items add column priority int not null default 0;\n")
     try:
         assert stack.npm("db:lock").returncode == 0
@@ -192,7 +191,7 @@ def test_a_new_migration_is_applied_by_the_cli_in_order_and_keeps_data(stack: Su
         assert stack.psql("select version from supabase_migrations.schema_migrations order by version").splitlines() == ["20260101000000", "20260201000000"]
     finally:  # leave the application as it was generated; the next reset rebuilds the database from the baseline
         path.unlink(missing_ok=True)
-        lock.write_text(original_lock)
+        lock.unlink(missing_ok=True)
 
 
 def test_the_same_repository_tests_pass_against_the_supabase_database(stack: SupabaseApp) -> None:
@@ -310,5 +309,5 @@ def test_switching_provider_changes_no_application_code(template_repo: Path, tmp
     provider_files = {".copier-answers.yml", ".env.example", "compose.yaml", "supabase/config.toml", "scripts/db/cli.mjs", "package.json", "package-lock.json", "README.md", "AGENTS.md", "docs/database.md", ".github/workflows/ci.yml"}
     assert differing <= provider_files, sorted(differing - provider_files)
     assert {"compose.yaml", "supabase/config.toml", "scripts/db/cli.mjs", ".env.example"} <= differing  # the provider tooling really differs
-    for shared in ("src", "scripts/db/migrations.mjs", "supabase/migrations", "supabase/migrations.lock.json", "vitest.db.config.mts"):
+    for shared in ("src", "scripts/db/migrations.mjs", "supabase/migrations", "vitest.db.config.mts"):
         assert {n: pg[n] for n in pg if n.startswith(shared)} == {n: sb[n] for n in sb if n.startswith(shared)}, shared

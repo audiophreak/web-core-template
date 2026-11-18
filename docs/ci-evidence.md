@@ -27,6 +27,14 @@ skip counts, with reasons).
 (`github_sha`). The evidence is tied to the *branch tip you reviewed* (`commit_under_test`, also in
 the artifact and suite names). Both are recorded.
 
+## The database job
+
+The tests that need Docker (marker `db`: PostgreSQL containers and the local Supabase stack) run in their own
+job, `database`, once on Python 3.14, so the matrix jobs stay fast. The job sets `REQUIRE_DOCKER=1`, which makes
+those tests **fail, not skip,** when Docker is missing. Its artifact is `test-reports-database-<commit>`, with the
+same files and the same quiet token scan as the others; no database dump or connection string is ever written
+to the reports, and the tests use throwaway containers, volumes and passwords created for the run.
+
 ## Retrieving and reading it
 
 ```bash

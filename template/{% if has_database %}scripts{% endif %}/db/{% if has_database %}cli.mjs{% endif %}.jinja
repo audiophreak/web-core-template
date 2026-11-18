@@ -8,7 +8,7 @@ import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
-  LOCK_FILE,
+  LOCK_DIR,
   MIGRATIONS_DIR,
   MigrationError,
   addToLock,
@@ -118,7 +118,7 @@ function verify({ quiet = false } = {}) {
   const problems = verifyLock(listMigrations(), readLock());
   if (problems.length) throw new MigrationError(problems.join("\n"));
   if (!quiet)
-    console.log(`${listMigrations().length} migration(s) match ${LOCK_FILE}`);
+    console.log(`${listMigrations().length} migration(s) match ${LOCK_DIR}`);
 }
 
 const commands = {

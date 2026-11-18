@@ -1,9 +1,0 @@
-{
-  "version": 1,
-  "migrations": {
-    "20260101000000": {
-      "name": "create_items",
-      "sha256": "e7c12837a8567411a0ef51bdd09fd14ba268133da88f413c27f94d63b218d390"
-    }
-  }
-}

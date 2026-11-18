@@ -33,7 +33,11 @@ npm ci                                  # the lockfile now matches package.json
 npm run check
 ```
 
-`forms` and `rest_api` can be switched on the same way (`--data forms=true`, `--data rest_api=true`),
+`database` (`--data database=postgres` or `supabase`) can be switched on from `none` the same way; it needs
+`zod`, adds files, dependencies and the matching lock, and keeps your work and your own migrations (each
+migration has its own lock file, so they never conflict with a template migration). **Do not change an
+established provider this way**: it swaps the tooling under the project and orphans the old database's
+data; see `docs/features.md`. `forms` and `rest_api` can be switched on the same way (`--data forms=true`, `--data rest_api=true`),
 but only for a project that already has `zod`; without it the update is refused and nothing changes.
 `rest_api` adds files only (no dependency, the lockfile is untouched), keeps any `src/app/api/` routes
 you wrote yourself and leaves your Forms selection exactly as it was.

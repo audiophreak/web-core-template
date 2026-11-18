@@ -83,9 +83,14 @@ def _record_evidence(name: str, project: Path, check: subprocess.CompletedProces
         ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "rest_api": True, "cache_components": False}, "e2e-api-plain-app"),
         ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "forms": True, "rest_api": True}, "e2e-forms-api-app"),
         ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "forms": True, "rest_api": True, "cache_components": False}, "e2e-forms-api-plain-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "database": "postgres"}, "e2e-pg-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "database": "supabase"}, "e2e-sb-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "forms": True, "rest_api": True, "database": "postgres", "cache_components": False}, "e2e-pg-all-plain-app"),
+        ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "forms": True, "rest_api": True, "database": "supabase"}, "e2e-sb-all-app"),
     ],
     ids=["defaults", "awkward-description", "cache-components-off", "zod", "zod-and-cache-components-off", "forms", "forms-and-cache-components-off",
-         "rest_api", "rest_api-awkward-and-cache-components-off", "forms-and-rest_api", "forms-and-rest_api-cache-components-off"],
+         "rest_api", "rest_api-awkward-and-cache-components-off", "forms-and-rest_api", "forms-and-rest_api-cache-components-off",
+         "postgres", "supabase", "postgres-with-everything-cache-components-off", "supabase-with-everything"],
 )
 def test_generated_app_installs_and_passes_the_validation_gate(
     template_repo: Path, tmp_path: Path, answers: dict, name: str
@@ -117,6 +122,20 @@ def test_generated_app_installs_and_passes_the_validation_gate(
             assert name in result.stdout, name
         for behavior in ("requires every field", "makes no network request", "shows a submitting state", "passes trimmed, validated values"):
             assert behavior in result.stdout, behavior
+        assert "skipped" not in result.stdout.lower().replace("0 skipped", "")
+    if answers.get("database"):
+        # The database feature's offline tests must have run inside the gate; the real-database tests
+        # (`npm run test:db`) need a database and are covered by tests/test_database_*.py.
+        result = subprocess.run(
+            ["npm", "run", "-s", "test", "--", "src/server/db", "scripts/db", "src/lib/schemas/item", "--reporter=verbose"],
+            cwd=project, capture_output=True, text=True, timeout=300, check=False,
+        )  # fmt: skip
+        assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
+        for name in ("config.test.ts", "errors.test.ts", "server-only.test.ts", "migrations.test.ts", "item.test.ts"):
+            assert name in result.stdout, name
+        for behavior in ("match the lock", "starts every module with import", "is never reached by a client component", "never carries the driver's text"):
+            assert behavior in result.stdout, behavior
+        assert "db.test.ts" not in result.stdout  # the real-database tests are excluded from `npm run test`
         assert "skipped" not in result.stdout.lower().replace("0 skipped", "")
     if answers.get("rest_api"):
         # The API's own tests must have run inside the gate: handlers called with Request objects.

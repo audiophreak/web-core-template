@@ -1,0 +1,161 @@
+# Database
+
+A PostgreSQL database for local development, with version-controlled SQL migrations and a small typed, server-only data-access layer. This project uses the **{{ database }}** provider{% if database == 'postgres' %}: PostgreSQL 17 in Docker Compose{% else %}: the local Supabase stack, started by the pinned Supabase CLI{% endif %}.
+
+**Not production-ready on its own.** There is no authentication or authorization yet. The sample code is for local development and for learning the pattern, and nothing in the application's routes reaches the database (a test enforces it). See [Security boundaries](#security-boundaries-and-limitations).
+
+## How the pieces fit
+
+```mermaid
+flowchart LR
+  subgraph app [Next.js application]
+    pages[Server Components]
+    repo[src/server/items: repository]
+    data[src/server/db: pool, transactions, errors]
+  end
+  schemas[src/lib/schemas: Zod]
+  sql[supabase/migrations: plain SQL]
+  pages --> repo
+  repo --> data
+  repo --> schemas
+  data --> pg[(PostgreSQL)]
+  sql -->|db:migrate| pg
+```
+
+- **`supabase/migrations/`** is the single, canonical source of the schema: plain SQL files, named `<14-digit version>_<name>.sql`, applied in version order. The directory name follows the Supabase CLI's convention so that the same files serve a standalone PostgreSQL and Supabase. `supabase/migrations.lock/` holds one small `.sha256` file per migration, recording its checksum (one file each, so two branches that add migrations never conflict).
+- **`scripts/db/`** is local tooling. `cli.mjs` starts and stops the database and runs migrations; `migrations.mjs` is the migration runner and the lock check. This is the only place that differs between providers.
+- **`src/server/db/`** is the connection layer: validated configuration, one connection pool per server process, `withTransaction`, and `DatabaseError`. Every module starts with `import "server-only"`.
+- **`src/server/items/`** is the example domain code: a repository over the sample `app.items` table. It validates inputs and outputs with the schemas in `src/lib/schemas/item.ts` and uses parameterized SQL only. It knows nothing about the provider.
+- **`src/lib/schemas/`** holds the Zod shapes shared by server and client code. They never import the database.
+
+## Prerequisites
+
+- Node.js as pinned in `.nvmrc`, and `npm ci`.
+- Docker: Docker Desktop or OrbStack on macOS, Docker Engine on Linux. Apple silicon is supported.
+{% if database == 'supabase' %}- The Supabase CLI is a pinned development dependency, installed by `npm ci` (there is no global install). The local stack runs several containers; Supabase recommends at least 7 GB of memory for the full stack, and this project switches off the services it does not use.
+{% endif %}
+## First run
+
+{% if database == 'postgres' %}```bash
+npm run db:init     # creates .env.local with a random password (never overwrites it)
+npm run db:up       # starts PostgreSQL and waits until it is healthy
+npm run db:migrate  # applies the migrations
+npm run test:db     # runs the real-database tests
+```
+
+Set `POSTGRES_PORT=55432` before `npm run db:init` if port 5432 is taken.
+{% else %}```bash
+npm run db:init     # creates .env.local with the local stack's connection string
+npm run db:up       # starts the local Supabase stack (the first start downloads images)
+npm run db:migrate  # applies pending migrations through the Supabase CLI
+npm run test:db     # runs the real-database tests against the stack's database
+```
+
+`npm run db:up` starts the database and the Data API gateway. The CLI applies the migrations on the first start.
+{% endif %}
+## Everyday commands
+
+- `npm run db:status`: container status and the migration state.
+- `npm run db:down`: stops the containers. **The data is kept.**
+- `npm run db:verify`: checks the migration files against `supabase/migrations.lock/`, offline.
+- `npm run db:lock`: records new migrations in the lock.
+{% if database == 'postgres' %}- `npm run db:logs`: the last lines of the database log.
+{% endif %}- `npm run test:db`: the real-database tests (see [Tests](#tests)).
+
+There is deliberately no command that deletes data. {% if database == 'postgres' %}To discard the local database completely, run `docker compose --env-file .env.local down --volumes` yourself, knowing that it deletes the named volume.{% else %}To recreate the local database from the migrations, run `npx supabase db reset`, knowing that it discards the local data. Never point it at a remote project.{% endif %}
+
+## Configuration
+
+The application and the tools read the environment; `.env.local` is loaded by Next.js and by `npm run db:*`. It is git-ignored: never commit it, and never put a production credential in it. `.env.example` shows the shape.
+
+- `DATABASE_URL` (required): a `postgresql://` URL. Server side only: it must never be exposed to the browser, so never use a `NEXT_PUBLIC_` name for it.
+- `DATABASE_POOL_MAX`: connections in the pool, 1 to 20 (default 5).
+- `DATABASE_CONNECT_TIMEOUT_MS`: how long to wait for a connection, 100 to 60000 (default 5000).
+- `DATABASE_STATEMENT_TIMEOUT_MS`: the longest a statement may run, 100 to 300000 (default 10000).
+{% if database == 'postgres' %}- `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `POSTGRES_PORT`: read by Docker Compose. `npm run db:init` generates a random password on your machine.
+
+The database port is published on `127.0.0.1` only, so nothing outside this computer can connect.
+{% else %}
+The local Supabase stack uses the CLI's documented defaults (user `postgres`, password `postgres`, port 54322). They are not secrets and do not apply to any hosted project.
+{% endif %}
+## Migrations
+
+To change the schema, add a migration. Never edit one that is committed.
+
+1. Create `supabase/migrations/<14-digit version>_<name>.sql` with a version later than every existing one, for example `20260301093000_add_notes.sql`. Names use lowercase letters and underscores.
+2. Write plain SQL. Each migration runs in its own transaction, so do not write `begin` or `commit`, and avoid statements that cannot run in a transaction (such as `create index concurrently`).
+3. Run `npm run db:lock` to record it, then `npm run db:migrate`.
+
+What protects the history:
+
+- The lock check (`npm run db:verify`, and a test in `npm run check`) fails if a committed migration was edited, renamed or deleted, or if a migration is not locked yet.
+{% if database == 'postgres' %}- The runner records every applied version and its checksum in `public.schema_migrations`. It refuses to run if an applied migration changed or disappeared, or if a new migration is older than one that was already applied. A migration that fails is rolled back completely and nothing is recorded. Running it again changes nothing.
+- It refuses to migrate a database that is not local, unless you set `MIGRATE_ALLOW_REMOTE=true`.
+{% else %}- The Supabase CLI applies the same files and keeps its own history in `supabase_migrations.schema_migrations`. The checksum lock above is what detects edits; the CLI itself applies pending versions and a migration that fails is rolled back.
+- `npm run db:migrate` runs `supabase migration up` against the **local** database only.
+{% endif %}
+A schema change that must keep existing data (renaming a column, for example) is written as a new migration that moves the data, in the same file.
+
+## Data access
+
+Use the repository from server code only.
+
+```ts
+import { createItem, listItems } from "@/server/items/repository";
+
+const created = await createItem({ title: "First item" });
+const recent = await listItems({ limit: 10 });
+```
+
+Rules the code follows, and that new code should follow:
+
+- **Validate at the boundary.** Repository functions parse their input with the schemas in `src/lib/schemas/item.ts` and return validated objects. Invalid input throws `DatabaseError` with code `invalid_input` before any SQL runs.
+- **Parameterized SQL only.** Values always travel as parameters (`$1`, `$2`). Column names come from fixed lists in the code, never from a caller.
+- **Transactions own one connection.** Wrap related changes in `withTransaction` and pass the `tx` it gives you to every call that belongs to the transaction. A call made without `tx` runs outside the transaction.
+
+```ts
+import { withTransaction } from "@/server/db";
+import { createItem, updateItem } from "@/server/items/repository";
+
+await withTransaction(async (tx) => {
+  const item = await createItem({ title: "Draft" }, tx);
+  await updateItem(item.id, { body: "Ready" }, tx);
+});
+```
+
+- **Errors are safe to handle.** Every failure is a `DatabaseError` with a `code` (`not_found`, `conflict`, `constraint_violation`, `invalid_input`, `timeout`, `unavailable`, `unexpected`) and a fixed message. It never contains the SQL, its parameters, the connection string or row data, so it is safe to log or to turn into an API problem.
+- **Everything is bounded.** Connecting, running a statement and sitting idle inside a transaction all have timeouts, and listing is limited to 100 rows per call.
+- **Use it in pages with Suspense.** With Cache Components, database data is request-time data, so read it inside a `Suspense` boundary after `await connection()` from `next/server`.
+
+To add a table: write a migration, add its schemas to `src/lib/schemas/`, add a repository next to `src/server/items/`, start the module with `import "server-only"`, and cover it with a `*.db.test.ts` file.
+
+## Tests
+
+- `npm run check` needs no database. It includes unit tests of the configuration, the error classification, the schemas, the migration files and the lock, and the checks that keep server code out of client bundles.
+- `npm run test:db` runs the tests that need PostgreSQL: create, read, update and delete, missing records, invalid input, SQL injection attempts, duplicate keys and constraints, transactions, timeouts, connection failures and the migration runner. Each test file creates its own throwaway database on the server named in `DATABASE_URL` and drops only that one, so the data in your development database is never touched. It refuses a database that is not local.
+
+## Security boundaries and limitations
+
+- **Server only.** Database modules start with `import "server-only"`, so the production build refuses to bundle them into client code. A test also reads the source and fails if a client component can reach them.
+- **No route uses the database yet.** There is no authentication, so no route handler or page in this project reads or writes the database, and a test fails if one imports the data layer. Do not add one before authentication and authorization exist: a route that mutates data without them would be open to everyone.
+{% if database == 'supabase' %}- **The sample table is not exposed through the Supabase Data API.** It lives in the `app` schema, which `supabase/config.toml` does not list under `api.schemas`; row level security is enabled with no policy; and the migration revokes everything from `anon`, `authenticated` and `service_role`. Do not add `app` to the exposed schemas without reviewed grants and policies. Never put a service-role key in code that runs in the browser.
+- **The local Supabase stack listens on every network interface.** The CLI publishes its ports that way, and the stack uses documented default passwords and keys. `npm run db:up` therefore checks how Docker published the ports and, if other machines could connect, stops the stack (keeping its data) and explains why. To use it, make Docker publish on loopback only (Docker Desktop: Settings, Docker Engine, add `"ip": "127.0.0.1"`; Linux: `"ip"` in `daemon.json`), or on a network you fully trust set `SUPABASE_ALLOW_LAN_EXPOSURE=true`.
+{% else %}- **The database port is bound to loopback.** Compose publishes it on `127.0.0.1` only, and the password is random and local to your machine.
+{% endif %}- **Local development only.** Nothing here provisions or modifies a remote database, and the migration tool refuses a non-local `DATABASE_URL`. This provider is not authorized for production use.
+- **Deferred to authentication and authorization.** Identifying users, sessions, deciding who may read or change each record (including row level security policies), a least-privilege runtime database role, protected API routes, and rate limiting are not implemented.
+- **Postgres superuser.** For simplicity the application connects as the database owner. A deployed application should use a role that can only read and write the tables it needs.
+
+## Changing provider
+
+Switching an established project between PostgreSQL and Supabase is **not** a template upgrade. It changes the tooling and the place where your data lives, and moving data between databases is not automated. `devkit upgrade` refuses it. To switch, generate a new project with the other provider and move your migrations and data deliberately (for example with `pg_dump` and `psql`), then verify the result. Your application code in `src/` does not change, because it does not depend on the provider.
+
+## Troubleshooting and recovery
+
+- **The port is already in use.** {% if database == 'postgres' %}Choose another with `POSTGRES_PORT` before `npm run db:init`, or change it in `.env.local` (and the port in `DATABASE_URL`).{% else %}Stop the other Supabase project or change the ports in `supabase/config.toml` and `.env.local`.{% endif %}
+- **`db:up` says `.env.local` is missing.** Run `npm run db:init`.
+{% if database == 'postgres' %}- **Authentication fails after a fresh `db:init`.** The volume still holds the earlier password. Either restore the old `.env.local`, or discard the local data on purpose with `docker compose --env-file .env.local down --volumes` and start again.
+{% endif %}- **A migration failed.** It was rolled back and nothing was recorded. Fix the problem in a new migration if the failed file was already committed; if it was never committed, edit it, run `npm run db:lock` only after it applies, and run `npm run db:migrate` again.
+- **"was modified after it was locked" or "after it was applied".** A committed migration changed. Restore the original file from git and put your change in a new migration.
+- **"is older than the newest applied migration".** Give the new migration a version later than every applied one.
+- **Tests cannot connect.** Check `npm run db:status` and that `DATABASE_URL` points at the running database.
+- **Back up before experiments.** {% if database == 'postgres' %}`docker compose --env-file .env.local exec db pg_dump -U app app > backup.sql` writes a dump (keep it out of git).{% else %}Use `pg_dump` against the local connection string; the stack's data volumes survive `npm run db:down`.{% endif %}
