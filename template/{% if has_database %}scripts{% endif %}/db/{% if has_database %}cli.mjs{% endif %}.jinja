@@ -31,7 +31,10 @@ function fail(message) {
 
 function run(command, args) {
   const result = spawnSync(command, args, { stdio: "inherit" });
-  if (result.error) fail(`cannot run ${command}: ${result.error.code === "ENOENT" ? "not found" : result.error.message}`);
+  if (result.error)
+    fail(
+      `cannot run ${command}: ${result.error.code === "ENOENT" ? "not found" : result.error.message}`,
+    );
   return result.status ?? 1;
 }
 
@@ -40,7 +43,8 @@ function loadEnv() {
 }
 
 function requireEnvFile() {
-  if (!existsSync(ENV_FILE)) fail(`${ENV_FILE} does not exist: run npm run db:init first`);
+  if (!existsSync(ENV_FILE))
+    fail(`${ENV_FILE} does not exist: run npm run db:init first`);
 }
 
 function compose(...args) {
@@ -55,19 +59,24 @@ function supabase(...args) {
 function databaseUrl() {
   loadEnv();
   const url = process.env.DATABASE_URL;
-  if (!url) fail(`DATABASE_URL is not set: run npm run db:init, or set it in the environment`);
+  if (!url)
+    fail(
+      `DATABASE_URL is not set: run npm run db:init, or set it in the environment`,
+    );
   return url;
 }
 
 function verify({ quiet = false } = {}) {
   const problems = verifyLock(listMigrations(), readLock());
   if (problems.length) throw new MigrationError(problems.join("\n"));
-  if (!quiet) console.log(`${listMigrations().length} migration(s) match ${LOCK_FILE}`);
+  if (!quiet)
+    console.log(`${listMigrations().length} migration(s) match ${LOCK_FILE}`);
 }
 
 const commands = {
   init() {
-    if (existsSync(ENV_FILE)) return console.log(`${ENV_FILE} already exists; not changed`);
+    if (existsSync(ENV_FILE))
+      return console.log(`${ENV_FILE} already exists; not changed`);
     const port = process.env.POSTGRES_PORT ?? "5432";
     if (!/^\d{2,5}$/.test(port)) fail("POSTGRES_PORT must be a port number");
     const lines =
@@ -82,35 +91,55 @@ const commands = {
               `DATABASE_URL=postgresql://app:${password}@127.0.0.1:${port}/app`,
             ];
           })()
-        : ["DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres"];
-    writeFileSync(ENV_FILE, `# Created by npm run db:init. Git-ignored: do not commit or share.\n${lines.join("\n")}\n`, { mode: 0o600 });
+        : [
+            "DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:54322/postgres",
+          ];
+    writeFileSync(
+      ENV_FILE,
+      `# Created by npm run db:init. Git-ignored: do not commit or share.\n${lines.join("\n")}\n`,
+      { mode: 0o600 },
+    );
     chmodSync(ENV_FILE, 0o600);
-    console.log(`created ${ENV_FILE}${PROVIDER === "postgres" ? " with a new random password" : " (the local Supabase stack's defaults)"}`);
+    console.log(
+      `created ${ENV_FILE}${PROVIDER === "postgres" ? " with a new random password" : " (the local Supabase stack's defaults)"}`,
+    );
   },
 
   up() {
-    process.exitCode = PROVIDER === "postgres" ? compose("up", "--detach", "--wait") : supabase("start");
+    process.exitCode =
+      PROVIDER === "postgres"
+        ? compose("up", "--detach", "--wait")
+        : supabase("start");
   },
 
   down() {
     // Stops the containers and keeps the data (the named volume). Nothing is deleted.
-    process.exitCode = PROVIDER === "postgres" ? compose("down") : supabase("stop");
+    process.exitCode =
+      PROVIDER === "postgres" ? compose("down") : supabase("stop");
   },
 
   async status() {
-    process.exitCode = PROVIDER === "postgres" ? compose("ps") : supabase("status");
+    process.exitCode =
+      PROVIDER === "postgres" ? compose("ps") : supabase("status");
     try {
       const url = databaseUrl();
       const status = await migrationStatus({ connectionString: url });
-      console.log(`migrations applied (PostgreSQL bookkeeping): ${status.applied.length}, pending: ${status.pending.length}`);
+      console.log(
+        `migrations applied (PostgreSQL bookkeeping): ${status.applied.length}, pending: ${status.pending.length}`,
+      );
       for (const problem of status.problems) console.log(`problem: ${problem}`);
     } catch (error) {
-      console.log(`database: not reachable or not migrated by this tool (${error.message})`);
+      console.log(
+        `database: not reachable or not migrated by this tool (${error.message})`,
+      );
     }
   },
 
   logs() {
-    if (PROVIDER !== "postgres") fail("logs: use `npx supabase status` and Docker's own tools for the Supabase stack");
+    if (PROVIDER !== "postgres")
+      fail(
+        "logs: use `npx supabase status` and Docker's own tools for the Supabase stack",
+      );
     process.exitCode = compose("logs", "--tail", "100", "db");
   },
 
@@ -122,8 +151,15 @@ const commands = {
     }
     const url = databaseUrl();
     assertLocalHost(url, process.env.MIGRATE_ALLOW_REMOTE === "true");
-    const result = await migrate({ connectionString: url, log: (line) => console.log(line) });
-    console.log(result.applied.length ? `${result.applied.length} migration(s) applied` : "already up to date");
+    const result = await migrate({
+      connectionString: url,
+      log: (line) => console.log(line),
+    });
+    console.log(
+      result.applied.length
+        ? `${result.applied.length} migration(s) applied`
+        : "already up to date",
+    );
   },
 
   verify() {
@@ -140,7 +176,9 @@ const commands = {
 
 const command = process.argv[2];
 if (!command || !(command in commands)) {
-  fail(`usage: node scripts/db/cli.mjs <${Object.keys(commands).join("|")}> (${PROVIDER}; migrations in ${MIGRATIONS_DIR})`);
+  fail(
+    `usage: node scripts/db/cli.mjs <${Object.keys(commands).join("|")}> (${PROVIDER}; migrations in ${MIGRATIONS_DIR})`,
+  );
 }
 try {
   await commands[command]();

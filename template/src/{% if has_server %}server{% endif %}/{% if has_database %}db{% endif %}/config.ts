@@ -1,0 +1,61 @@
+import "server-only";
+import { z } from "zod";
+
+/** Names the variables that are wrong, never their values: a connection string holds a password. */
+export class DatabaseConfigError extends Error {
+  constructor(readonly variables: readonly string[]) {
+    super(`Invalid database configuration: check ${variables.join(", ")}`);
+    this.name = "DatabaseConfigError";
+  }
+}
+
+const postgresUrl = z.string().refine((value) => {
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "postgres:" || protocol === "postgresql:";
+  } catch {
+    return false;
+  }
+});
+
+const environmentSchema = z.object({
+  DATABASE_URL: postgresUrl,
+  DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(20).default(5),
+  DATABASE_CONNECT_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(100)
+    .max(60_000)
+    .default(5_000),
+  DATABASE_STATEMENT_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(100)
+    .max(300_000)
+    .default(10_000),
+});
+
+export type DatabaseConfig = {
+  readonly connectionString: string;
+  readonly poolMax: number;
+  readonly connectTimeoutMs: number;
+  readonly statementTimeoutMs: number;
+};
+
+/** Reads and validates the database settings from the environment (server side only). */
+export function loadDatabaseConfig(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): DatabaseConfig {
+  const parsed = environmentSchema.safeParse(env);
+  if (!parsed.success) {
+    throw new DatabaseConfigError([
+      ...new Set(parsed.error.issues.map((issue) => String(issue.path[0]))),
+    ]);
+  }
+  return {
+    connectionString: parsed.data.DATABASE_URL,
+    poolMax: parsed.data.DATABASE_POOL_MAX,
+    connectTimeoutMs: parsed.data.DATABASE_CONNECT_TIMEOUT_MS,
+    statementTimeoutMs: parsed.data.DATABASE_STATEMENT_TIMEOUT_MS,
+  };
+}

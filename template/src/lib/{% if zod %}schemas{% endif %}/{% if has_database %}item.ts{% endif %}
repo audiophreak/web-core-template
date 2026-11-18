@@ -1,0 +1,47 @@
+import { z } from "zod";
+
+/**
+ * The sample `items` record (table `app.items`) and the inputs that create, change and list it.
+ *
+ * These shapes are shared: the repository in `src/server/items/` validates its inputs and outputs with
+ * them, and a client or an API handler can use the same rules. They describe data, never a connection.
+ */
+export const itemIdSchema = z.uuid();
+
+const titleSchema = z
+  .string()
+  .trim()
+  .min(1, "Title is required")
+  .max(100, "Title must be 100 characters or fewer");
+const bodySchema = z
+  .string()
+  .max(2000, "Body must be 2000 characters or fewer");
+
+export const itemSchema = z.strictObject({
+  id: itemIdSchema,
+  title: titleSchema,
+  body: bodySchema,
+  createdAt: z.date(),
+  updatedAt: z.date(),
+});
+
+export const createItemInputSchema = z.strictObject({
+  title: titleSchema,
+  body: bodySchema.default(""),
+});
+
+export const updateItemInputSchema = z
+  .strictObject({ title: titleSchema.optional(), body: bodySchema.optional() })
+  .refine((value) => value.title !== undefined || value.body !== undefined, {
+    message: "Nothing to update",
+  });
+
+export const listItemsOptionsSchema = z.strictObject({
+  limit: z.int().min(1).max(100).default(20),
+  offset: z.int().min(0).max(100_000).default(0),
+});
+
+export type Item = z.infer<typeof itemSchema>;
+export type CreateItemInput = z.input<typeof createItemInputSchema>;
+export type UpdateItemInput = z.input<typeof updateItemInputSchema>;
+export type ListItemsOptions = z.input<typeof listItemsOptionsSchema>;
