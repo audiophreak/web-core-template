@@ -186,7 +186,7 @@ def test_the_application_layer_is_identical_for_both_providers(apps) -> None:
     pg, sb = _files(apps["pg+auth"]), _files(apps["sb+auth"])
     assert set(pg) - set(sb) == PROVIDER_ONLY["postgres"] and set(sb) - set(pg) == PROVIDER_ONLY["supabase"]
     different = {n for n in set(pg) & set(sb) if pg[n] != sb[n]}
-    assert different <= {".copier-answers.yml", "package.json", "package-lock.json", "scripts/db/cli.mjs", ".env.example", "docs/database.md", "docs/auth.md", "README.md"}, sorted(different)
+    assert different <= {".copier-answers.yml", ".gitignore", "package.json", "package-lock.json", "scripts/db/cli.mjs", ".env.example", "docs/database.md", "docs/auth.md", "README.md"}, sorted(different)
     for name in pg:
         if name.startswith(("src/", "supabase/migrations")):
             assert pg[name] == sb[name], name  # every line of application code and every migration is the same
@@ -241,6 +241,16 @@ def test_the_runtime_url_and_the_administrative_url_are_different_settings(apps)
     assert "search_path=app_auth" in (apps["pg+auth"] / "src/server/db/pool.ts").read_text()
     admin_readers = [n for n, b in _files(apps["pg+auth"]).items() if n.startswith("src/") and b"DATABASE_URL" in b and "/test-support/" not in n and ".test." not in n]
     assert admin_readers == [], admin_readers  # the running application never reads the administrative connection
+
+
+def test_the_supabase_cli_state_is_ignored_for_that_provider_only(apps) -> None:
+    """The CLI creates supabase/.temp and supabase/.branches when the stack first starts; untracked, they made every
+    update refuse the project (an update needs a clean working tree)."""
+    for label in ("sb", "sb+auth", "sb+forms+auth"):
+        lines = (apps[label] / ".gitignore").read_text().splitlines()
+        assert "supabase/.temp" in lines and "supabase/.branches" in lines, label
+    for label in ("pg", "pg+auth"):
+        assert "supabase/.temp" not in (apps[label] / ".gitignore").read_text(), label
 
 
 # ------------------------------------------------------------------ the migrations
@@ -340,9 +350,12 @@ def _published(tag: str) -> bool:
     ids=lambda answers: "+".join(answers) or "default",
 )
 def test_with_auth_off_every_configuration_is_byte_identical_to_the_published_release(answers: tuple[str, ...]) -> None:
-    """The release gate for "additive": rendered against the real v0.5.1 tag, nothing but `.copier-answers.yml` differs."""
+    """The release gate for "additive": rendered against the real v0.5.1 tag, nothing but `.copier-answers.yml` differs
+    (and, for the Supabase provider, the two new `.gitignore` lines for the CLI's local state)."""
     if not _published("v0.5.1"):
         pytest.skip("the published tag v0.5.1 is not in this checkout (shallow clone)")
     arguments = [sys.executable, str(TEMPLATE_ROOT / "tools/compare_release.py"), "v0.5.1", *[part for answer in answers for part in ("--set", answer)]]
+    if "database=supabase" in answers:
+        arguments += ["--allow-change", ".gitignore"]  # the one deliberate change: it now ignores the Supabase CLI's local state (see the changelog)
     result = subprocess.run(arguments, capture_output=True, text=True, cwd=TEMPLATE_ROOT, check=False)
     assert result.returncode == 0 and "identical to v0.5.1" in result.stdout, result.stdout + result.stderr

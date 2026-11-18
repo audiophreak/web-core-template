@@ -42,11 +42,8 @@ def _extract(tag: str, destination: Path) -> None:
     subprocess.run(["tar", "-x", "-C", str(destination)], input=archive.stdout, check=True)
 
 
-@pytest.fixture()
-def history(tmp_path: Path):
+def build_history(tmp_path: Path) -> tuple[Path, Path]:
     """(working repo, bare remote): the real published v0.5.1, then this working tree as v0.6.0."""
-    if not _published_tag_available():
-        pytest.skip(f"the published tag {PUBLISHED} is not in this checkout (shallow clone)")
     repo = tmp_path / "web-core-template"
     repo.mkdir()
     run_git(repo, "init", "-q", "-b", "main")
@@ -67,6 +64,13 @@ def history(tmp_path: Path):
     remote.parent.mkdir()
     run_git(tmp_path, "clone", "-q", "--bare", str(repo), str(remote))
     return repo, remote
+
+
+@pytest.fixture()
+def history(tmp_path: Path):
+    if not _published_tag_available():
+        pytest.skip(f"the published tag {PUBLISHED} is not in this checkout (shallow clone)")
+    return build_history(tmp_path)
 
 
 def _release(repo: Path, remote: Path, tag: str, edit) -> None:

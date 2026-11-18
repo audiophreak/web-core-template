@@ -42,6 +42,11 @@ but only for a project that already has `zod`; without it the update is refused 
 `rest_api` adds files only (no dependency, the lockfile is untouched), keeps any `src/app/api/` routes
 you wrote yourself and leaves your Forms selection exactly as it was.
 
+A Supabase project that has already started its local stack contains `supabase/.temp` and `supabase/.branches`
+(created by the CLI). Older templates did not ignore them, and an update refuses a working tree with untracked files:
+add `supabase/.temp` and `supabase/.branches` to your `.gitignore` and commit that first (templates from 0.6.0 do it
+for you).
+
 `auth` (`--data auth=true`) can be switched on the same way for a project that already has `zod`, `rest_api` and a
 `database`; if any is missing the update is refused and nothing changes. It adds the files, `better-auth`, an
 `.npmrc` and the matching lock, replaces the sample repository with the owner-scoped one, and adds two
