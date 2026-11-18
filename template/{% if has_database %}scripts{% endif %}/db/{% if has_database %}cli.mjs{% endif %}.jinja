@@ -6,7 +6,7 @@
 // never prints a credential, and it has no command that deletes data.
 import { spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { chmodSync, existsSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import {
   LOCK_FILE,
   MIGRATIONS_DIR,
@@ -54,6 +54,54 @@ function compose(...args) {
 
 function supabase(...args) {
   return run("npx", ["--no-install", "supabase", ...args]);
+}
+
+function projectId() {
+  const match = /^project_id\s*=\s*"([^"]+)"/m.exec(
+    readFileSync("supabase/config.toml", "utf8"),
+  );
+  if (!match) fail("supabase/config.toml has no project_id");
+  return match[1];
+}
+
+/**
+ * The Supabase CLI publishes its ports on every network interface, not just loopback, and the local stack
+ * uses documented default passwords and keys. Docker's default bind address decides this, so ask Docker
+ * what it actually published and report each port that other machines on the network could reach.
+ */
+function exposedPorts() {
+  const listed = spawnSync(
+    "docker",
+    [
+      "ps",
+      "--quiet",
+      "--filter",
+      `label=com.supabase.cli.project=${projectId()}`,
+    ],
+    { encoding: "utf8" },
+  );
+  const ids = (listed.stdout ?? "").split("\n").filter(Boolean);
+  if (listed.status !== 0 || ids.length === 0) return [];
+  const inspected = spawnSync("docker", ["inspect", ...ids], {
+    encoding: "utf8",
+    maxBuffer: 64 * 1024 * 1024,
+  });
+  if (inspected.status !== 0) fail("cannot inspect the Supabase containers");
+  const exposed = [];
+  for (const container of JSON.parse(inspected.stdout)) {
+    for (const [port, bindings] of Object.entries(
+      container.NetworkSettings?.Ports ?? {},
+    )) {
+      for (const binding of bindings ?? []) {
+        if (binding.HostIp !== "127.0.0.1" && binding.HostIp !== "::1") {
+          exposed.push(
+            `${container.Name.replace(/^\//, "")} ${port} -> host port ${binding.HostPort} on ${binding.HostIp || "all interfaces"}`,
+          );
+        }
+      }
+    }
+  }
+  return exposed;
 }
 
 function databaseUrl() {
@@ -106,10 +154,33 @@ const commands = {
   },
 
   up() {
-    process.exitCode =
-      PROVIDER === "postgres"
-        ? compose("up", "--detach", "--wait")
-        : supabase("start");
+    if (PROVIDER === "postgres") {
+      process.exitCode = compose("up", "--detach", "--wait");
+      return;
+    }
+    const status = supabase("start");
+    if (status !== 0) {
+      process.exitCode = status;
+      return;
+    }
+    const exposed = exposedPorts();
+    if (exposed.length === 0) return;
+    const allowed = process.env.SUPABASE_ALLOW_LAN_EXPOSURE === "true";
+    console.error(
+      `${allowed ? "warning" : "error"}: the local Supabase stack is reachable from other machines:`,
+    );
+    for (const line of exposed) console.error(`  ${line}`);
+    console.error(
+      "It uses documented default passwords and keys, so anyone on the network could use it.",
+    );
+    if (allowed)
+      return console.error(
+        "SUPABASE_ALLOW_LAN_EXPOSURE=true: continuing on your responsibility.",
+      );
+    supabase("stop"); // keeps the data; only the containers stop
+    fail(
+      'the stack was stopped. Make Docker publish ports on loopback only (Docker Desktop: Settings > Docker Engine, add "ip": "127.0.0.1"; Linux: "ip" in daemon.json), or on a network you fully trust set SUPABASE_ALLOW_LAN_EXPOSURE=true.',
+    );
   },
 
   down() {
@@ -119,6 +190,14 @@ const commands = {
   },
 
   async status() {
+    if (PROVIDER === "supabase") {
+      const exposed = exposedPorts();
+      console.log(
+        exposed.length
+          ? `network exposure: REACHABLE FROM OTHER MACHINES (${exposed.length} port(s))`
+          : "network exposure: loopback only",
+      );
+    }
     process.exitCode =
       PROVIDER === "postgres" ? compose("ps") : supabase("status");
     try {

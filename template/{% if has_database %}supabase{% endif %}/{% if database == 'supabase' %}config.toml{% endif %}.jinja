@@ -1,0 +1,50 @@
+# Local Supabase stack, started by `npm run db:up` (Supabase CLI, pinned in package.json).
+# Reference: https://supabase.com/docs/guides/local-development/cli/config
+#
+# Only what the data foundation needs is on: the Postgres database and the Data API gateway. Auth,
+# storage, realtime, edge functions, studio, mail and analytics are off; Auth arrives with the
+# authentication work package. After changing this file run `npm run db:down` and `npm run db:up`.
+
+project_id = "{{ app_name }}"
+
+[api]
+enabled = true
+port = 54321
+# The Data API serves only these schemas. The sample table lives in `app`, which is NOT listed, and
+# nothing in supabase/migrations grants an API role access to it. Do not add `app` here without
+# policies and grants that you have reviewed.
+schemas = ["public", "graphql_public"]
+extra_search_path = ["public", "extensions"]
+max_rows = 100
+
+[db]
+port = 54322
+# Must match the PostgreSQL major version of the database you deploy to.
+major_version = 17
+
+[db.migrations]
+enabled = true
+
+[db.seed]
+enabled = false
+
+[studio]
+enabled = false
+
+[auth]
+enabled = false
+
+[realtime]
+enabled = false
+
+[storage]
+enabled = false
+
+[edge_runtime]
+enabled = false
+
+[local_smtp]
+enabled = false
+
+[analytics]
+enabled = false
