@@ -42,6 +42,16 @@ but only for a project that already has `zod`; without it the update is refused 
 `rest_api` adds files only (no dependency, the lockfile is untouched), keeps any `src/app/api/` routes
 you wrote yourself and leaves your Forms selection exactly as it was.
 
+`auth` (`--data auth=true`) can be switched on the same way for a project that already has `zod`, `rest_api` and a
+`database`; if any is missing the update is refused and nothing changes. It adds the files, `better-auth`, an
+`.npmrc` and the matching lock, replaces the sample repository with the owner-scoped one, and adds two
+migrations after yours. Then run `npm ci`, `npm run db:init` (it appends the runtime password and the
+authentication secret to your `.env.local` and changes nothing else) and `npm run db:migrate`. Rows in
+`app.items` from before authentication have no owner and are invisible to the application until you assign
+them (see the generated `docs/auth.md`). **Disabling authentication is not an upgrade**: a raw
+`copier update --data auth=false` removes the generated files but not the data, and the migrations and
+accounts need a decision of yours; `devkit upgrade` refuses it.
+
 Only booleans are accepted (`true`/`false`, `yes`/`no`, `on`/`off`); anything else is rejected before
 anything changes. Switching a feature off again is not automated; remove its files and dependency by
 hand (or regenerate).

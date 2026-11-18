@@ -33,7 +33,14 @@ The tests that need Docker (marker `db`: PostgreSQL containers and the local Sup
 job, `database`, once on Python 3.14, so the matrix jobs stay fast. The job sets `REQUIRE_DOCKER=1`, which makes
 those tests **fail, not skip,** when Docker is missing. Its artifact is `test-reports-database-<commit>`, with the
 same files and the same quiet token scan as the others; no database dump or connection string is ever written
-to the reports, and the tests use throwaway containers, volumes and passwords created for the run.
+to the reports, and the tests use throwaway containers, volumes and passwords created for the run. The job
+includes `tests/test_auth_database.py`, which runs the authentication feature against a real PostgreSQL and a
+real local Supabase stack through a production build and a `next start` server: it never prints a secret, and
+it searches the build output, the server logs and every response for the secrets of the run.
+
+The upgrade tests in `tests/test_auth_upgrade.py` start from the real published `v0.5.1`, taken from the
+repository's tags; CI checks the repository out without tags, so those tests **skip** there with the reason
+"the published tag is not in this checkout". They run in the release gate with the full history.
 
 ## Retrieving and reading it
 
