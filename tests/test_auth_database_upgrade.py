@@ -9,6 +9,7 @@ database gets. Both providers must converge on the same schema. Needs Docker (ma
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from pathlib import Path
@@ -91,7 +92,10 @@ class UpgradeEnv(Env):
 def upgraded(request, tmp_path_factory: pytest.TempPathFactory):
     require_docker()
     if not _published_tag_available():
-        pytest.skip(f"the published tag {PUBLISHED} is not in this checkout (shallow clone)")
+        message = f"the published tag {PUBLISHED} is not in this checkout (shallow clone)"
+        if os.environ.get("REQUIRE_DOCKER") == "1":
+            pytest.fail(message)  # CI must run these: a shallow checkout may not quietly remove the coverage
+        pytest.skip(message)
     provider = request.param
     base = tmp_path_factory.mktemp(f"upgrade-{provider}")
     (base / "history").mkdir()
