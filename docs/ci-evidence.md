@@ -45,9 +45,10 @@ includes `tests/test_auth_database.py`, which runs the authentication feature ag
 real local Supabase stack through a production build and a `next start` server: it never prints a secret, and
 it searches the build output, the server logs and every response for the secrets of the run.
 
-The upgrade tests in `tests/test_auth_upgrade.py` start from the real published `v0.5.1`, taken from the
-repository's tags; CI checks the repository out without tags, so those tests **skip** there with the reason
-"the published tag is not in this checkout". They run in the release gate with the full history.
+The upgrade tests in `tests/test_auth_upgrade.py` and the byte-identity tests in `tests/test_auth_feature.py` start
+from the real published `v0.5.1`, taken from the repository's tags. The matrix jobs therefore check out the full
+history (`fetch-depth: 0`), so they run in CI; in a shallow checkout they would skip with the reason "the published
+tag is not in this checkout", which is why a local count can differ.
 
 ## Retrieving and reading it
 
