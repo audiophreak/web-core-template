@@ -19,7 +19,8 @@ _exclude:
   - .next
 
 # Lockfiles live in locks/ (outside the rendered tree) and are selected by `lock_key` below.
-# Optional features are questions of the same name as their entry in features.yml.
+# Optional features are questions of the same name as their entry in features.yml (a boolean, or a
+# choice for a feature with providers).
 
 # Deliberately no `_tasks`, `_migrations` or `_jinja_extensions`: they execute code and
 # would force users to run Copier with --trust. Generation only renders files.
@@ -81,10 +82,35 @@ rest_api:
     {% if rest_api is not boolean %}Answer true or false.{% elif rest_api and not zod %}rest_api requires zod: answer zod=true as well (rest_api is never enabled for you).{% endif %}
   help: "Add the versioned REST API? (requires zod; adds route handlers under /api/v1 with shared Zod contracts in src/lib/schemas/v1/, RFC 9457 problem-details errors and handler tests; adds no npm dependencies)"
 
+# A choice question, not a boolean: one validated selection instead of mutually incompatible flags.
+# `none` is the default and generates nothing; the others are validated against `choices` before
+# anything is written. tools/features.py models it as a choice feature of features.yml.
+database:
+  type: str
+  default: none
+  choices: [none, postgres, supabase]
+  validator: >-
+    {% if database != 'none' and not zod %}database requires zod: answer zod=true as well (database is never enabled for you).{% endif %}
+  help: "Add a PostgreSQL database? none (default), postgres (Docker Compose, PostgreSQL 17) or supabase (local Supabase stack). Requires zod. Adds SQL migrations in supabase/migrations/, a typed server-only data-access layer (`pg`, `server-only`) and a sample items repository; the Supabase option also adds the pinned Supabase CLI as a development dependency. Auth and authorization are not included."
+
+# Computed: never asked and never recorded. Readable names for conditions used in file names, where an
+# expression such as `rest_api or database != 'none'` would be hard to read. Tests check they always
+# agree with the answers.
+has_database:
+  type: yaml
+  when: false
+  default: "{{ database != 'none' }}"
+
+has_server:
+  type: yaml
+  when: false
+  default: "{{ rest_api or database != 'none' }}"
+
 # Computed: never asked and never recorded. Selects the lockfile that matches the selected
 # dependencies. It must agree with tools/features.py; a test renders every valid configuration
 # and checks that the lockfile it receives is the one that module names.
 lock_key:
   type: str
   when: false
-  default: "{{ 'forms+zod' if forms else ('zod' if zod else 'base') }}"
+  default: >-
+    {% set db = ['database-' ~ database] if database != 'none' else [] %}{% set fm = ['forms'] if forms else [] %}{% set zd = ['zod'] if zod else [] %}{% set parts = db + fm + zd %}{{ parts | join('+') if parts else 'base' }}

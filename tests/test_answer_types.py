@@ -43,7 +43,8 @@ def recorded(project: Path, name: str):
 
 def test_the_template_has_boolean_questions_to_protect() -> None:
     assert {"cache_components", "zod"} <= set(BOOLEAN_QUESTIONS)
-    assert set(REGISTRY) <= set(BOOLEAN_QUESTIONS), "every feature must be a boolean question"
+    assert {name for name, feature in REGISTRY.items() if not feature.choices} <= set(BOOLEAN_QUESTIONS), "every boolean feature must be a boolean question"
+    assert not {name for name, feature in REGISTRY.items() if feature.choices} & set(BOOLEAN_QUESTIONS), "a choice feature is not a boolean"
 
 
 @pytest.mark.parametrize("name", BOOLEAN_QUESTIONS)

@@ -1,0 +1,139 @@
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { dirname, join, resolve, sep } from "node:path";
+import { describe, expect, it } from "vitest";
+
+/**
+ * The database modules start with `import "server-only"`, so the framework's build refuses to bundle
+ * them into client code. This test is the second layer: it reads the source and fails if a module lost
+ * the import, or if anything outside server code (or an API route) imports the data-access layer.
+ */
+const SRC = join(process.cwd(), "src");
+const GUARDED = [
+  join(SRC, "server", "db") + sep,
+  join(SRC, "server", "items") + sep,
+];
+const SERVER = join(SRC, "server") + sep;
+const ROUTES = join(SRC, "app", "api") + sep;
+
+function sourceFiles(directory: string): string[] {
+  return readdirSync(directory).flatMap((name) => {
+    const path = join(directory, name);
+    if (statSync(path).isDirectory()) return sourceFiles(path);
+    return /\.(ts|tsx)$/.test(name) ? [path] : [];
+  });
+}
+
+const FILES = sourceFiles(SRC);
+const read = (file: string) => readFileSync(file, "utf8");
+const isTest = (file: string) =>
+  /\.test\.tsx?$/.test(file) || file.includes(`${sep}test-support${sep}`);
+const specifiersOf = (file: string) =>
+  [
+    ...read(file).matchAll(/(?:\bfrom\s*|\bimport\s*\(?\s*)["']([^"']+)["']/g),
+  ].map((match) => match[1]);
+
+function resolveImport(from: string, specifier: string): string | null {
+  const base = specifier.startsWith("@/")
+    ? join(SRC, specifier.slice(2))
+    : specifier.startsWith(".")
+      ? resolve(dirname(from), specifier)
+      : null;
+  if (!base) return null;
+  return (
+    [base, `${base}.ts`, `${base}.tsx`, join(base, "index.ts")].find(
+      (candidate) => FILES.includes(candidate),
+    ) ?? null
+  );
+}
+
+const importsOf = (file: string) =>
+  specifiersOf(file).flatMap(
+    (specifier) => resolveImport(file, specifier) ?? [],
+  );
+const hasUseClient = (source: string) =>
+  /^\s*(?:\/\/[^\n]*\n\s*)*["']use client["']/.test(source);
+
+describe("server-only data access", () => {
+  const modules = FILES.filter(
+    (file) =>
+      GUARDED.some((prefix) => file.startsWith(prefix)) && !isTest(file),
+  );
+
+  it("finds the modules it is meant to guard", () => {
+    expect(modules.map((file) => file.replace(SRC, "src"))).toEqual(
+      expect.arrayContaining([
+        `src${sep}server${sep}db${sep}pool.ts`,
+        `src${sep}server${sep}items${sep}repository.ts`,
+      ]),
+    );
+  });
+
+  it('starts every module with import "server-only"', () => {
+    const missing = modules.filter(
+      (file) => !/^import "server-only";/.test(read(file)),
+    );
+    expect(missing.map((file) => file.replace(SRC, "src"))).toEqual([]);
+  });
+
+  it("is imported only by server code and API routes", () => {
+    const offenders = FILES.filter(
+      (file) =>
+        !file.startsWith(SERVER) &&
+        !file.startsWith(ROUTES) &&
+        importsOf(file).some((target) =>
+          GUARDED.some((prefix) => target.startsWith(prefix)),
+        ),
+    );
+    expect(offenders.map((file) => file.replace(SRC, "src"))).toEqual([]);
+  });
+
+  it("is not imported by any route handler yet: authentication has to exist first", () => {
+    const routes = FILES.filter(
+      (file) => /[\\/]route\.tsx?$/.test(file) && !isTest(file),
+    );
+    const offenders = routes.filter((file) =>
+      importsOf(file).some((target) =>
+        GUARDED.some((prefix) => target.startsWith(prefix)),
+      ),
+    );
+    expect(offenders.map((file) => file.replace(SRC, "src"))).toEqual([]);
+  });
+
+  it("is never reached by a client component, directly or through what it imports", () => {
+    const reaches = (start: string): boolean => {
+      const seen = new Set<string>();
+      const queue = [start];
+      while (queue.length) {
+        const file = queue.pop()!;
+        if (seen.has(file)) continue;
+        seen.add(file);
+        if (GUARDED.some((prefix) => file.startsWith(prefix))) return true;
+        queue.push(...importsOf(file));
+      }
+      return false;
+    };
+    const offenders = FILES.filter((file) => hasUseClient(read(file))).filter(
+      reaches,
+    );
+    expect(offenders.map((file) => file.replace(SRC, "src"))).toEqual([]);
+  });
+
+  it("keeps the shared schemas free of the database and of the environment", () => {
+    for (const file of FILES.filter(
+      (f) => f.startsWith(join(SRC, "lib", "schemas") + sep) && !isTest(f),
+    )) {
+      expect(
+        specifiersOf(file).filter(
+          (s) => s.startsWith("@/server") || s === "pg" || s === "server-only",
+        ),
+        file,
+      ).toEqual([]);
+      expect(read(file), file).not.toMatch(/process\.env|DATABASE_URL/);
+    }
+  });
+
+  it("never logs from the database modules", () => {
+    for (const file of modules)
+      expect(read(file), file).not.toMatch(/console\./);
+  });
+});

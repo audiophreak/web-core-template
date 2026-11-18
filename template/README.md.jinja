@@ -86,6 +86,14 @@ problem details (`application/problem+json`) with stable `code` values. Paths, s
 the error format and the versioning rules are in `docs/api-v1.md`. Handlers are tested by calling
 them with `Request` objects, so `npm run check` needs no running server.
 
+{% endif %}{% if has_database %}## Database
+
+A PostgreSQL database for local development, with version-controlled SQL migrations and a typed,
+server-only data-access layer. Provider: **{{ database }}**. Start with `docs/database.md`:
+`npm run db:init`, `npm run db:up`, `npm run db:migrate`. The sample `app.items` table and its repository
+(`src/server/items/`) show the pattern; `npm run test:db` runs the real-database tests. There is no
+authentication yet, so nothing in the application's routes reaches the database.
+
 {% endif %}{% endif %}## Template updates
 
 This project was generated from a [Copier](https://copier-org.github.io/copier/) template. `.copier-answers.yml` records the answers and template version; commit it and do not edit it by hand. See the template's documentation for how to pull in template updates.

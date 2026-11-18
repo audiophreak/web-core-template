@@ -24,4 +24,5 @@ pythonpath = ["tools"]
 addopts = "-ra"
 markers = [
   "e2e: generates a project and runs npm ci / npm run check (slow, needs network and Node 26)",
+  "db: runs a real database in Docker (needs a running Docker daemon; CI runs these in their own job)",
 ]

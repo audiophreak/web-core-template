@@ -1,0 +1,21 @@
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vitest/config";
+
+// The tests that talk to a real PostgreSQL (`*.db.test.ts`). Each file creates a disposable database,
+// so they run one file at a time and never touch the data of the database named in DATABASE_URL.
+export default defineConfig({
+  resolve: {
+    tsconfigPaths: true,
+    alias: {
+      "server-only": fileURLToPath(
+        new URL("./src/server/db/test-support/server-only.ts", import.meta.url),
+      ),
+    },
+  },
+  test: {
+    include: ["**/*.db.test.ts"],
+    fileParallelism: false,
+    testTimeout: 60_000,
+    hookTimeout: 60_000,
+  },
+});

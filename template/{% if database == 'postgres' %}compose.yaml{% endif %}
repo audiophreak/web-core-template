@@ -1,0 +1,27 @@
+# Local PostgreSQL for development (no Supabase). The image is pinned by digest: it is the multi-arch
+# index of postgres:17.10, so Apple silicon and Linux/amd64 pull the same release. Credentials come from
+# .env.local (git-ignored; created by `npm run db:init`); nothing in this file is a secret. The port is
+# published on the loopback interface only, so nothing outside this machine can reach the database.
+services:
+  db:
+    image: postgres:17.10@sha256:7958605b474b3d264a969cb3a123d6aa00ad1e1fe9da8a69984dabb704d93317
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?run npm run db:init}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run npm run db:init}
+      POSTGRES_DB: ${POSTGRES_DB:?run npm run db:init}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  db-data:

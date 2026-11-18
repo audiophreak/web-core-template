@@ -1,0 +1,84 @@
+import { describe, expect, expectTypeOf, it } from "vitest";
+import {
+  createItemInputSchema,
+  itemIdSchema,
+  listItemsOptionsSchema,
+  updateItemInputSchema,
+  type CreateItemInput,
+  type Item,
+} from "@/lib/schemas";
+
+describe("item schemas", () => {
+  it("validates ids as UUIDs", () => {
+    expect(
+      itemIdSchema.safeParse("3f2b8c1e-5a4d-4e6f-9b7a-1c2d3e4f5a6b").success,
+    ).toBe(true);
+    for (const bad of [
+      "",
+      "1",
+      "1 or 1=1",
+      "'; drop table app.items; --",
+      "3f2b8c1e5a4d4e6f9b7a1c2d3e4f5a6b",
+    ]) {
+      expect(itemIdSchema.safeParse(bad).success, bad).toBe(false);
+    }
+  });
+
+  it("trims titles, defaults the body and rejects unknown fields", () => {
+    expect(createItemInputSchema.parse({ title: "  Hello  " })).toEqual({
+      title: "Hello",
+      body: "",
+    });
+    expect(
+      createItemInputSchema.safeParse({ title: "x", admin: true }).success,
+    ).toBe(false);
+  });
+
+  it.each([
+    ["an empty title", { title: "   " }],
+    ["a title over 100 characters", { title: "t".repeat(101) }],
+    ["a body over 2000 characters", { title: "x", body: "b".repeat(2001) }],
+    ["a non-string title", { title: 3 }],
+    ["no title", {}],
+  ])("rejects %s when creating", (_label, input) => {
+    expect(createItemInputSchema.safeParse(input).success).toBe(false);
+  });
+
+  it("requires something to update and allows each field alone", () => {
+    expect(updateItemInputSchema.safeParse({}).success).toBe(false);
+    expect(updateItemInputSchema.safeParse({ title: "x" }).success).toBe(true);
+    expect(updateItemInputSchema.safeParse({ body: "" }).success).toBe(true);
+    expect(updateItemInputSchema.safeParse({ title: "" }).success).toBe(false);
+  });
+
+  it("bounds listing", () => {
+    expect(listItemsOptionsSchema.parse({})).toEqual({ limit: 20, offset: 0 });
+    for (const bad of [
+      { limit: 0 },
+      { limit: 101 },
+      { limit: 1.5 },
+      { offset: -1 },
+      { limit: "5" },
+      { offset: "0; drop table x" },
+    ]) {
+      expect(
+        listItemsOptionsSchema.safeParse(bad).success,
+        JSON.stringify(bad),
+      ).toBe(false);
+    }
+  });
+
+  it("infers its types from the schemas", () => {
+    expectTypeOf<Item>().toEqualTypeOf<{
+      id: string;
+      title: string;
+      body: string;
+      createdAt: Date;
+      updatedAt: Date;
+    }>();
+    expectTypeOf<CreateItemInput>().toEqualTypeOf<{
+      title: string;
+      body?: string | undefined;
+    }>();
+  });
+});

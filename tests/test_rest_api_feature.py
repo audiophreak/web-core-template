@@ -130,7 +130,7 @@ def test_the_question_is_a_plain_identifier_with_no_alias_or_special_validation(
     assert (question["type"], question["default"], question["choices"]) == ("yaml", False, [False, True])
     assert question["validator"].count("{% if rest_api is not boolean %}") == 1 and "zod" in question["validator"]
     computed = [name for name, q in questions.items() if isinstance(q, dict) and q.get("when") is False]
-    assert computed == ["lock_key"]  # the only computed question is the existing lock selector
+    assert computed == ["has_database", "has_server", "lock_key"]  # readable names for file-name conditions, and the lock selector
 
 
 def test_only_the_answer_is_recorded_and_it_always_matches_the_generated_files(apps) -> None:
@@ -284,12 +284,13 @@ def test_the_selection_is_recorded_and_composes_with_every_other_selection(apps,
 
 
 def test_every_supported_configuration_renders_and_records_exactly_its_selection(template_repo: Path, tmp_path: Path) -> None:
-    assert len(CONFIGURATIONS) == 5
+    assert len(CONFIGURATIONS) == 13
     for index, selection in enumerate(CONFIGURATIONS):
         project = tmp_path / f"c{index}"
         render(template_repo, project, **f.answers(selection, REGISTRY))
         answers = yaml.safe_load((project / ".copier-answers.yml").read_text())
-        assert {name for name in REGISTRY if answers[name]} == set(selection)
+        recorded = {f"{name}={answers[name]}" if REGISTRY[name].choices and answers[name] != "none" else name for name in REGISTRY if answers[name] not in (False, "none")}
+        assert recorded == set(selection)
         assert (project / "src/app/api/v1").is_dir() == (API in selection)
         assert (project / "src/components/forms").is_dir() == ("forms" in selection)
         assert (project / "src/lib/schemas").is_dir() == ("zod" in selection)

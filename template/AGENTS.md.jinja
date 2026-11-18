@@ -45,7 +45,13 @@ The application's requirements are not defined yet. Do not introduce architectur
   tighten anything (that needs `/api/v2`). Put each request and response shape in
   `src/lib/schemas/v1/`, `safeParse` every input, validate every response against its schema, and
   report errors with `problem()` from `src/server/api/responses.ts`. Server code stays in
-  `src/server/` and `src/app/api/`; a test fails if a client component reaches it. See `docs/api-v1.md`.{% endif %}{% endif %}
+  `src/server/` and `src/app/api/`; a test fails if a client component reaches it. See `docs/api-v1.md`.{% endif %}{% if has_database %}
+- Database access is server-only: modules in `src/server/db/` and `src/server/items/` start with
+  `import "server-only"`, use parameterized SQL only, and are never imported by client components or (until
+  authentication exists) by route handlers. Change the schema only by adding a migration in
+  `supabase/migrations/` (never edit a committed one) and running `npm run db:lock`. Validate every input
+  with a Zod schema from `src/lib/schemas/`, pass `tx` from `withTransaction` to every call that belongs to a
+  transaction, and never log a connection string. See `docs/database.md`.{% endif %}{% endif %}
 - Enforce authorization on the server, close to the data, never only in the UI.
 - Keep secrets in environment variables; never commit them, log them, or expose them to
   the browser (only `NEXT_PUBLIC_*` variables reach the client — never put secrets there).

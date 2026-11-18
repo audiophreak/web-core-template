@@ -1,0 +1,19 @@
+{% if has_database %}import { fileURLToPath } from "node:url";
+import { configDefaults, defineConfig } from "vitest/config";
+{% else %}import { defineConfig } from "vitest/config";
+{% endif %}
+export default defineConfig({
+  // Resolve the "@/*" import alias from tsconfig.json.
+{% if has_database %}  resolve: {
+    tsconfigPaths: true,
+    // `server-only` throws on purpose outside the framework's server bundle; tests run in plain Node.
+    alias: {
+      "server-only": fileURLToPath(
+        new URL("./src/server/db/test-support/server-only.ts", import.meta.url),
+      ),
+    },
+  },
+  // Tests that need a real database are named *.db.test.ts and run with `npm run test:db`.
+  test: { exclude: [...configDefaults.exclude, "**/*.db.test.ts"] },
+{% else %}  resolve: { tsconfigPaths: true },
+{% endif %}});

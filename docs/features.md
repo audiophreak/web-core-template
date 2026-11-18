@@ -5,7 +5,8 @@ mechanics; the reasoning, the alternatives and the roadmap are in the `developer
 repository (`docs/feature-composition.md`, `docs/full-stack-plan.md`).
 
 Currently available: **`zod`** (Zod schema validation), **`forms`** (React Hook Form with the Zod
-resolver) and **`rest_api`** (versioned route handlers); the last two require `zod`. Everything else is
+resolver), **`rest_api`** (versioned route handlers) and **`database`** (PostgreSQL, locally through Docker
+or Supabase); the last three require `zod`. Everything else is
 planned there.
 
 ## The model
@@ -83,12 +84,14 @@ repository commits **one complete lockfile per distinct set of npm dependencies*
 locks/base.json     the reference lock (no npm-affecting feature)
 locks/zod.json      base plus zod
 locks/forms+zod.json  base plus zod plus forms (forms requires zod, so there is no forms-only lock)
+locks/database-postgres+zod.json, database-supabase+zod.json, and each with forms
 ```
 
 - `template/package-lock.json.jinja` is a one-line shim that includes `locks/<key>.json`. `lock_key`
   is a computed question in `copier.yml` (never asked, never recorded). Copier's Jinja search path is
   the repository root, which is why `locks/` sits outside `template/` and is never rendered itself.
-- The key names only features marked `npm: true`, sorted and joined with `+`, so a feature that adds
+- The key names only features marked `npm: true`, sorted and joined with `+` (a choice feature contributes
+  `id-value`, because two providers can need different packages), so a feature that adds
   no dependency (for example Docker services) shares the base lock. The key is computed in
   `copier.yml` and in `tools/features.py`; a test renders every configuration and checks they agree.
 - `uv run python tools/refresh_locks.py` writes or refreshes the lockfiles (`--check` changes
@@ -237,3 +240,83 @@ Design points, each enforced by a test in the generated project or in this repos
 The question is an ordinary strict boolean, named like the other features (`rest_api`, a valid Jinja
 identifier), with the same kind of validator as `forms`: `rest_api requires zod` is reported before
 anything is written, in every flow. Its URL paths are unaffected: the API is at `/api/v1/...`.
+
+## Choice features, and the `database` feature
+
+A feature is usually a boolean question. A feature with providers is **one validated choice** instead of
+mutually incompatible booleans: `database` is `none` (the default, which generates nothing), `postgres` or
+`supabase`. In `features.yml` it lists `choices: [postgres, supabase]`; the default `none` is implicit.
+`tools/features.py` models a selection as a set of tokens, `forms` for a boolean and `database=postgres`
+for a choice, and `requires` and `conflicts` apply to the feature whichever value is chosen. The Copier
+question is `type: str` with `choices: [none, postgres, supabase]` and a validator that rejects a database
+without `zod` before anything is written. Boolean features are unchanged.
+
+Valid combinations: `database` needs `zod` and is independent of `forms`, `rest_api` and
+`cache_components`. Together with them there are thirteen supported configurations and seven lockfiles
+(`rest_api` adds no dependency, so it shares the lock of the configuration without it).
+
+| What | postgres | supabase |
+| ---- | -------- | -------- |
+| Local service | `compose.yaml`: PostgreSQL 17.10 pinned by its multi-arch index digest, a named volume, a health check, port on `127.0.0.1` only | `supabase/config.toml`: the Supabase CLI's local stack, PostgreSQL 17, only the database and the Data API gateway |
+| Credentials | `npm run db:init` writes a random password to the git-ignored `.env.local` | the CLI's documented local defaults |
+| Migrations | the runner, bookkeeping in `public.schema_migrations` with checksums | the CLI, bookkeeping in `supabase_migrations.schema_migrations` |
+| Extra dependency | none | `supabase` 2.122.1 (development only) |
+| Application code | identical | identical |
+
+Everything provider-specific is the Compose file or the Supabase config, `scripts/db/cli.mjs` (one constant
+selects the branch) and `.env.example`. `src/` and the migrations are byte-identical for both, which a test
+checks, so a project's domain code never depends on the provider.
+
+### Dependencies and how they were reviewed
+
+`pg` 8.23.1, `server-only` 0.0.1 and, in development, `@types/pg` 8.23.1 (and `supabase` 2.122.1 for the
+Supabase provider). All are exact, at least two weeks old when chosen, and MIT or ISC licensed, and no
+package in either lock has an install script. PostgreSQL adds 16 packages to the `zod` lock; Supabase adds
+31, most of them the CLI and its optional per-platform binaries, which npm installs for the current
+platform only and which the lock pins with integrity hashes. The Supabase CLI is installed this way (a
+pinned development dependency, its documented npm route) rather than globally, so no workstation
+configuration changes. **No ORM**: parameterized SQL and a small repository meet the need.
+
+The PostgreSQL image follows the same age rule as the packages: `postgres:17.10` was the newest 17.x release
+that was two weeks old when chosen. To refresh it, pick a newer tag that is at least two weeks old, read its
+digest with `docker buildx imagetools inspect postgres:<tag>`, change it in `template/compose.yaml` and
+`template/.github/workflows/ci.yml.jinja` (a test checks they agree), and run the database tests.
+
+### Migrations
+
+`supabase/migrations/<14-digit version>_<name>.sql` is the one canonical source, named as the Supabase CLI
+expects so that both providers apply the same files. `supabase/migrations.lock/` holds one `.sha256` file per
+migration; one file each means a template upgrade that adds a migration and a project that adds its own
+never conflict. The runner applies files in version order in separate transactions, refuses an edited,
+missing or out-of-order migration, rolls a failing one back, and refuses a non-local database.
+
+### The data-access layer and the server boundary
+
+`src/server/db/` (configuration, pool, transactions, errors) and `src/server/items/` (the example
+repository) start with `import "server-only"`, so the production build refuses to bundle them into client
+code. The `server-only` package is a dependency of this feature (the REST API feature has no dependencies
+and uses a directory and import-graph test instead). An import-graph test is kept as a second layer, and a
+third test fails if a route handler imports the data layer: **no shipped route uses the database,**
+because authentication does not exist yet. The sample table lives in schema `app`, which no HTTP API serves.
+
+### What the Supabase provider does and does not claim
+
+It is a working local stack, verified against a running one: the canonical migration applies, the repository
+tests pass against its database, the Data API refuses the protected schema even for a forged
+`service_role` token, API roles hold no privilege, and the schema equals standalone PostgreSQL's. It is
+**not** production-authorized: Auth, row level security policies, a least-privilege runtime role and
+protected API access belong to the authentication work package.
+
+The Supabase CLI publishes its ports on **every** network interface and the local stack uses documented
+default credentials. The template cannot change that, so `npm run db:up` asks Docker how the ports were
+published and, if other machines could connect, stops the stack (its data is kept) and explains how to bind
+Docker to loopback, unless `SUPABASE_ALLOW_LAN_EXPOSURE=true` is set.
+
+### Changing provider is not an upgrade
+
+Enabling a database on an existing project with `copier update --data database=postgres` adds files,
+dependencies and the matching lock and keeps your work. **Changing an established provider** swaps the
+tooling underneath the project (a test pins this) while the old database's data stays where it was, no
+longer managed by the project, and moving data between databases is not automated. A Copier validator
+cannot see the previous answer, so the template cannot refuse it; `devkit upgrade` does. Generate a new
+project with the other provider and move the data deliberately.
