@@ -268,6 +268,31 @@ Everything provider-specific is the Compose file or the Supabase config, `script
 selects the branch) and `.env.example`. `src/` and the migrations are byte-identical for both, which a test
 checks, so a project's domain code never depends on the provider.
 
+### Better Auth 1.7.16: the November 2026 advisories against this configuration
+
+Better Auth 1.7.16 fixed 12 advisories (all affect `< 1.7.16`). This template enables email and password
+authentication, database sessions, database rate limiting and nothing else: no plugin, no OAuth provider, no
+secondary storage, no cookie cache (`cookieCache.enabled` is `false`), no organizations, no admin, phone, email
+OTP, passkey or two-factor.
+
+| Advisory | Component | Applies here |
+|---|---|---|
+| GHSA-fvxx-76fc-893x (medium) | Revoked sessions stay valid with secondary storage or the cookie cache | **No.** Neither is enabled; sessions are read from the database on every request. Fixed anyway, and the revocation tests pass unchanged. |
+| GHSA-g95c-wqvr-8c3j (medium) | Admin roles with `user:update` can change a phone number | No: no admin plugin, no phone. |
+| GHSA-4wq4-2ppv-q3hg (critical) | `@better-auth/expo` authorization proxy signs values it did not issue | No: the Expo package is not installed. |
+| GHSA-9hm7-xhfp-cx58 (medium) | OAuth sign-in treats an unverified provider email as verified | No: no OAuth provider. |
+| GHSA-48c2-w96j-mv3m (medium) | MySQL serial ids return another request's record | No: PostgreSQL only; the Kysely adapter's MySQL path is not used. |
+| GHSA-2f9c-7xj7-gh55 (medium) | Email OTP attempt limit race | No: no email OTP plugin. |
+| GHSA-hwq2-v29r-p69r (medium) | Email-change links stay valid | No: change-email is not enabled and there is no mailer. |
+| GHSA-9p5w-h4pr-fcrc (high) | `@better-auth/electron` returns the server secret | No: package not installed. |
+| GHSA-x8j7-xh58-rv6x (medium) | `@better-auth/stripe` billing targets another customer | No: package not installed. |
+| GHSA-c85h-5mrr-mgx4 (medium) | Organization admins invite an owner with a padded role | No: no organization plugin. |
+| GHSA-gv75-j3v8-3crm (low) | `@better-auth/passkey` skips origin and user verification | No: package not installed. |
+| GHSA-q747-mqgr-4gh7 (high) | Phone numbers claimed before verification | No: no phone plugin. |
+
+So none of the 12 is exploitable in the configuration this template generates; the bump is taken because the
+maintainers instruct 1.7 users to update, and because the next feature (bearer tokens) enables a plugin.
+
 ### Dependencies and how they were reviewed
 
 `pg` 8.23.1, `server-only` 0.0.1 and, in development, `@types/pg` 8.23.1 (and `supabase` 2.122.1 for the
@@ -341,8 +366,8 @@ identical outcomes, and another requires every file under `src/` and every migra
 
 ### Dependencies and how they were reviewed
 
-One new dependency: `better-auth` 1.7.15, exact. It is the newest **stable** release that was at least two
-weeks old when chosen (1.7.25 was the newest, two days old; there are 1.8 betas, which are not used). MIT
+One new dependency: `better-auth` 1.7.16, exact. It is the security release of the 1.7 line (12 advisories fixed,
+see below) and was at least two weeks old when chosen (there are 1.8 betas, which are not used). MIT
 licensed; its 20 packages in the lock (the `@better-auth/*` adapters and core, `better-call`,
 `@better-fetch/fetch`, `jose`, `kysely`, `nanostores`, `@noble/*`, `defu`, `rou3`, `set-cookie-parser`,
 `@standard-schema/spec`) are all MIT and none has an install script; a test pins the exact set, so a

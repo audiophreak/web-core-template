@@ -131,7 +131,7 @@ def test_auth_can_be_enabled_on_a_real_v0_5_1_project_without_losing_user_work(h
         assert (project / name).is_file(), name
     assert not (project / "src/server/api/repository-handler.db.test.ts").exists()  # the unprotected example gave way to the real routes
     package = json.loads((project / "package.json").read_text())
-    assert package["dependencies"]["better-auth"] == "1.7.15" and package["scripts"]["db:roles"] == "node scripts/db/cli.mjs roles"
+    assert package["dependencies"]["better-auth"] == "1.7.16" and package["scripts"]["db:roles"] == "node scripts/db/cli.mjs roles"
     assert (project / "package-lock.json").read_text() == _expected_lock(lock, "up-app")
     migrations = sorted(p.name for p in (project / "supabase/migrations").iterdir())
     assert migrations == ["20260101000000_create_items.sql", "20260215000000_user_notes.sql", "20260301000000_create_auth.sql", "20260301000100_scope_items_to_owner.sql"]
