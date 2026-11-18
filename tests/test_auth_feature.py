@@ -203,7 +203,7 @@ def test_auth_is_the_same_with_forms_on_and_forms_adds_nothing_to_it(apps) -> No
 
 def test_dependencies_are_exact_and_the_only_addition_is_better_auth(apps) -> None:
     database, auth = _package(apps["pg"]), _package(apps["pg+auth"])
-    assert {k: v for k, v in auth["dependencies"].items() if k not in database["dependencies"]} == {"better-auth": "1.7.15"}
+    assert {k: v for k, v in auth["dependencies"].items() if k not in database["dependencies"]} == {"better-auth": "1.7.16"}
     assert auth["devDependencies"] == database["devDependencies"]
     assert {k: v for k, v in auth["scripts"].items() if k not in database["scripts"]} == {"db:roles": "node scripts/db/cli.mjs roles"}
     assert all(re.fullmatch(r"\d+\.\d+\.\d+", v) for v in (*auth["dependencies"].values(), *auth["devDependencies"].values()))
@@ -225,14 +225,14 @@ def test_the_auth_lock_adds_exactly_the_reviewed_packages_with_no_install_script
     assert set(added) == EXPECTED_NEW_PACKAGES
     assert {e["license"] for e in added.values()} == {"MIT"}
     assert not [name for name, entry in added.items() if entry.get("hasInstallScript") or entry.get("optional") or entry.get("peer")]
-    assert added["better-auth"]["version"] == "1.7.15"
+    assert added["better-auth"]["version"] == "1.7.16"
     for path, entry in base.items():
         if path:
             assert auth[path]["version"] == entry["version"], path  # no existing package moved or changed version
     for label in ("pg+auth", "sb+auth", "pg+forms+auth", "sb+forms+auth"):
         package, lock = _package(apps[label]), json.loads((apps[label] / "package-lock.json").read_text())["packages"]
         assert lock[""]["dependencies"] == package["dependencies"] and lock[""]["devDependencies"] == package["devDependencies"]
-        assert lock["node_modules/better-auth"]["version"] == "1.7.15"
+        assert lock["node_modules/better-auth"]["version"] == "1.7.16"
 
 
 def test_the_runtime_url_and_the_administrative_url_are_different_settings(apps) -> None:

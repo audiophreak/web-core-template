@@ -2,6 +2,15 @@
 
 Versions are git tags (`vMAJOR.MINOR.PATCH`). In 0.x, a minor bump may be breaking.
 
+## 0.6.1
+
+Security patch. **Better Auth 1.7.15 to 1.7.16 (exact)**, the release that fixes 12 advisories. Nothing else
+changes: with `auth` off, every selection is byte-identical to 0.6.0; with `auth` on, only `package.json`
+and `package-lock.json` differ (the `better-auth` family 1.7.16 and `better-call` 1.4.5; no package added or
+removed, no install script, all MIT). The four auth lockfiles are regenerated; the other seven are unchanged.
+None of the 12 advisories is exploitable in the generated configuration (no plugins, no OAuth, no secondary
+storage or cookie cache); the review is in `docs/features.md`. Upgrade: `devkit upgrade` (or `copier update`).
+
 ## 0.6.0
 
 Optional authentication feature. Additive: with `auth` off (the default), the output of every selection of
