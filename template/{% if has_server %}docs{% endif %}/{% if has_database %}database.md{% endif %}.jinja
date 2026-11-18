@@ -55,7 +55,7 @@ npm run test:db     # runs the real-database tests against the stack's database
 {% endif %}
 ## Everyday commands
 
-- `npm run db:status`: container status and the migration state.
+- `npm run db:status`: container status and the migration state{% if database == 'supabase' %} (from the Supabase CLI's own history){% endif %}.
 - `npm run db:down`: stops the containers. **The data is kept.**
 - `npm run db:verify`: checks the migration files against `supabase/migrations.lock/`, offline.
 - `npm run db:lock`: records new migrations in the lock.

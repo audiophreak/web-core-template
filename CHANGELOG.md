@@ -2,6 +2,16 @@
 
 Versions are git tags (`vMAJOR.MINOR.PATCH`). In 0.x, a minor bump may be breaking.
 
+## 0.5.1
+
+Bug fix, no other change: `npm run db:status` with the `supabase` provider reported "migrations applied: 0,
+pending: 1" even though the Supabase CLI had applied the migration, because it read this tool's PostgreSQL
+bookkeeping table, which does not exist on a Supabase database. It now shows the CLI's own migration list
+(`supabase migration list`). The `postgres` provider's output is unchanged apart from dropping the words
+"(PostgreSQL bookkeeping)" from its summary line. Only `scripts/db/cli.mjs` and `docs/database.md` change in
+generated projects with a database; every other configuration is byte-identical to 0.5.0. Existing 0.5.0
+projects pick the fix up with `devkit upgrade` (or `copier update`); nothing else changes.
+
 ## 0.5.0
 
 Optional database feature. Additive: with `database` off (the default), the output of every selection of
