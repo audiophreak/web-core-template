@@ -26,7 +26,9 @@ const PROBLEMS: Record<ProblemCode, { status: number; title: string }> = {
     status: 500,
     title: "The server could not complete the request",
   },
-};
+{% if auth %}  unauthenticated: { status: 401, title: "Authentication is required" },
+  origin_not_allowed: { status: 403, title: "This origin is not allowed" },
+{% endif %}};
 
 const COMMON_HEADERS = { "X-Content-Type-Options": "nosniff" } as const;
 

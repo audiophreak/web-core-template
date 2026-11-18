@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+{% set DB_URL_VAR = 'DATABASE_RUNTIME_URL' if auth else 'DATABASE_URL' %}{% set PING = 'ping()' if auth else 'listItems()' %}import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import {
   DatabaseConfigError,
   DatabaseError,
@@ -6,8 +6,8 @@ import {
   getPool,
   withTransaction,
 } from "@/server/db";
-import { listItems } from "@/server/items/repository";
-import {
+{% if not auth %}import { listItems } from "@/server/items/repository";
+{% endif %}import {
   adminUrl,
   createTestDatabase,
   type TestDatabase,
@@ -27,7 +27,9 @@ afterAll(async () => {
   await database.drop();
 });
 
-async function code(promise: Promise<unknown>): Promise<string> {
+{% if auth %}const ping = () => withTransaction((tx) => tx.query("select 1"));
+
+{% endif %}async function code(promise: Promise<unknown>): Promise<string> {
   try {
     await promise;
   } catch (error) {
@@ -44,10 +46,12 @@ async function code(promise: Promise<unknown>): Promise<string> {
 
 describe("connection failures", () => {
   it("reports an unreachable server as unavailable, quickly, without leaking the address", async () => {
-    process.env.DATABASE_URL = "postgresql://app:s3cr3t@127.0.0.1:1/app";
-    process.env.DATABASE_CONNECT_TIMEOUT_MS = "2000";
+{% if auth %}    process.env.DATABASE_RUNTIME_URL =
+      "postgresql://app:s3cr3t@127.0.0.1:1/app";
+{% else %}    process.env.DATABASE_URL = "postgresql://app:s3cr3t@127.0.0.1:1/app";
+{% endif %}    process.env.DATABASE_CONNECT_TIMEOUT_MS = "2000";
     const started = Date.now();
-    expect(await code(listItems())).toBe("unavailable");
+    expect(await code({{ PING }})).toBe("unavailable");
     expect(await code(withTransaction(async () => undefined))).toBe(
       "unavailable",
     );
@@ -58,38 +62,43 @@ describe("connection failures", () => {
     const url = new URL(adminUrl());
     url.password = "s3cr3t-wrong";
     url.pathname = `/${database.name}`;
-    process.env.DATABASE_URL = url.toString();
-    expect(await code(listItems())).toBe("unavailable");
+    process.env.{{ DB_URL_VAR }} = url.toString();
+    expect(await code({{ PING }})).toBe("unavailable");
   });
 
   it("reports a missing database as unavailable", async () => {
     const url = new URL(database.url);
     url.pathname = "/app_test_does_not_exist";
-    process.env.DATABASE_URL = url.toString();
-    expect(await code(listItems())).toBe("unavailable");
+    process.env.{{ DB_URL_VAR }} = url.toString();
+    expect(await code({{ PING }})).toBe("unavailable");
   });
 
   it("times out a connection attempt that never completes instead of hanging", async () => {
-    process.env.DATABASE_URL = "postgresql://app:s3cr3t@10.255.255.1:5432/app"; // a non-routable address
-    process.env.DATABASE_CONNECT_TIMEOUT_MS = "500";
+{% if auth %}    process.env.DATABASE_RUNTIME_URL =
+      "postgresql://app:s3cr3t@10.255.255.1:5432/app"; // a non-routable address
+{% else %}    process.env.DATABASE_URL = "postgresql://app:s3cr3t@10.255.255.1:5432/app"; // a non-routable address
+{% endif %}    process.env.DATABASE_CONNECT_TIMEOUT_MS = "500";
     const started = Date.now();
-    expect(["timeout", "unavailable"]).toContain(await code(listItems()));
+    expect(["timeout", "unavailable"]).toContain(await code({{ PING }}));
     expect(Date.now() - started).toBeLessThan(4_000);
   });
 
   it("recovers once the database is reachable again", async () => {
-    process.env.DATABASE_URL = "postgresql://app:s3cr3t@127.0.0.1:1/app";
-    expect(await code(listItems())).toBe("unavailable");
+{% if auth %}    process.env.DATABASE_RUNTIME_URL =
+      "postgresql://app:s3cr3t@127.0.0.1:1/app";
+{% else %}    process.env.DATABASE_URL = "postgresql://app:s3cr3t@127.0.0.1:1/app";
+{% endif %}    expect(await code({{ PING }})).toBe("unavailable");
     await closePool();
-    process.env.DATABASE_URL = database.url;
+    process.env.{{ DB_URL_VAR }} = database.url;
     process.env.DATABASE_CONNECT_TIMEOUT_MS = "5000";
-    expect(await listItems()).toEqual([]);
-  });
+{% if auth %}    expect((await getPool().query("select 1 as ok")).rows).toEqual([{ ok: 1 }]);
+{% else %}    expect(await listItems()).toEqual([]);
+{% endif %}  });
 });
 
 describe("configuration errors", () => {
   it("fails with the names of the bad variables, never their values", () => {
-    process.env.DATABASE_URL = "mysql://app:s3cr3t@127.0.0.1:3306/app";
+    process.env.{{ DB_URL_VAR }} = "mysql://app:s3cr3t@127.0.0.1:3306/app";
     try {
       getPool();
       throw new Error("expected a configuration error");

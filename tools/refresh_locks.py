@@ -158,6 +158,8 @@ def build_lock(key: str, selection: frozenset[str], registry, before: str) -> st
         current = json.loads((project / "package-lock.json").read_text(encoding="utf-8"))
         if current != starting:
             raise ToolError("the starting lockfile is not the base lock; the template is inconsistent")
+        # The generated project carries a .npmrc when the feature needs one (auth sets legacy-peer-deps);
+        # npm reads it from the project, so the lock is produced under the same settings it is used with.
         subprocess.run(
             ["npm", "install", "--package-lock-only", "--ignore-scripts", "--no-audit", "--no-fund",
              f"--before={before}"],

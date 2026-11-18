@@ -1,4 +1,4 @@
-import "server-only";
+{% set DB_URL_VAR = 'DATABASE_RUNTIME_URL' if auth else 'DATABASE_URL' %}import "server-only";
 import { z } from "zod";
 
 /** Names the variables that are wrong, never their values: a connection string holds a password. */
@@ -19,7 +19,7 @@ const postgresUrl = z.string().refine((value) => {
 });
 
 const environmentSchema = z.object({
-  DATABASE_URL: postgresUrl,
+  {{ DB_URL_VAR }}: postgresUrl,
   DATABASE_POOL_MAX: z.coerce.number().int().min(1).max(20).default(5),
   DATABASE_CONNECT_TIMEOUT_MS: z.coerce
     .number()
@@ -53,7 +53,7 @@ export function loadDatabaseConfig(
     ]);
   }
   return {
-    connectionString: parsed.data.DATABASE_URL,
+    connectionString: parsed.data.{{ DB_URL_VAR }},
     poolMax: parsed.data.DATABASE_POOL_MAX,
     connectTimeoutMs: parsed.data.DATABASE_CONNECT_TIMEOUT_MS,
     statementTimeoutMs: parsed.data.DATABASE_STATEMENT_TIMEOUT_MS,

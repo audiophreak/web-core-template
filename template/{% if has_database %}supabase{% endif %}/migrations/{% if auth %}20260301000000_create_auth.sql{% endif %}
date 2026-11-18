@@ -1,0 +1,119 @@
+-- Authentication: the least-privilege runtime role and Better Auth's tables.
+--
+-- The application connects as `app_runtime`, never as the owner that runs migrations. The role is
+-- created here without a login or a password (nothing secret belongs in a committed file); `npm run
+-- db:migrate` gives it a password from DATABASE_RUNTIME_URL afterwards. It is not a superuser and
+-- cannot create roles, databases or schemas, replicate, or bypass row level security, and it owns
+-- nothing.
+--
+-- The tables are the ones Better Auth's own schema tooling (`getMigrations`) reports for the
+-- email/password setup in src/server/auth/auth.ts. A database test applies this file and fails if Better
+-- Auth would still want to create or add anything, so a Better Auth upgrade that needs more schema is
+-- noticed instead of silently running DDL at startup. They live in `app_auth`, a schema no HTTP API
+-- exposes (Supabase's own `auth` schema is a different thing and stays untouched and disabled).
+
+do $$
+begin
+  if not exists (select 1 from pg_roles where rolname = 'app_runtime') then
+    create role app_runtime nologin noinherit nosuperuser nocreatedb nocreaterole noreplication nobypassrls connection limit 20;
+  end if;
+exception
+  when duplicate_object or unique_violation then null; -- another database on this server created it first
+end
+$$;
+
+-- The account that runs the migrations may act as the runtime role (`set role app_runtime`): that is how
+-- the tests, and an administrator investigating a problem, see exactly what the application sees. It
+-- gives the runtime role nothing: the owner can already do more. (On Supabase the migration user is not
+-- a superuser, so without this it could not.)
+grant app_runtime to current_user with set true;
+
+create schema if not exists app_auth;
+
+revoke all on schema app_auth from public;
+
+create table app_auth."user" (
+  "id" text not null primary key,
+  "name" text not null,
+  "email" text not null unique,
+  "emailVerified" boolean not null,
+  "image" text,
+  "createdAt" timestamptz default current_timestamp not null,
+  "updatedAt" timestamptz default current_timestamp not null
+);
+
+create table app_auth."session" (
+  "id" text not null primary key,
+  "expiresAt" timestamptz not null,
+  "token" text not null unique,
+  "createdAt" timestamptz default current_timestamp not null,
+  "updatedAt" timestamptz not null,
+  "ipAddress" text,
+  "userAgent" text,
+  "userId" text not null references app_auth."user" ("id") on delete cascade
+);
+
+create table app_auth."account" (
+  "id" text not null primary key,
+  "accountId" text not null,
+  "providerId" text not null,
+  "userId" text not null references app_auth."user" ("id") on delete cascade,
+  "accessToken" text,
+  "refreshToken" text,
+  "idToken" text,
+  "accessTokenExpiresAt" timestamptz,
+  "refreshTokenExpiresAt" timestamptz,
+  "scope" text,
+  "password" text, -- a salted scrypt hash, never the password
+  "createdAt" timestamptz default current_timestamp not null,
+  "updatedAt" timestamptz not null
+);
+
+create table app_auth."verification" (
+  "id" text not null primary key,
+  "identifier" text not null,
+  "value" text not null,
+  "expiresAt" timestamptz not null,
+  "createdAt" timestamptz default current_timestamp not null,
+  "updatedAt" timestamptz default current_timestamp not null
+);
+
+create table app_auth."rateLimit" (
+  "id" text not null primary key,
+  "key" text not null unique,
+  "count" integer not null,
+  "lastRequest" bigint not null
+);
+
+create index "session_userId_idx" on app_auth."session" ("userId");
+
+create index "account_userId_idx" on app_auth."account" ("userId");
+
+create index "verification_identifier_idx" on app_auth."verification" ("identifier");
+
+-- Only what Better Auth does at runtime: read and write rows. No DDL, no other schema.
+grant usage on schema app_auth to app_runtime;
+
+grant select, insert, update, delete on
+  app_auth."user",
+  app_auth."session",
+  app_auth."account",
+  app_auth."verification",
+  app_auth."rateLimit"
+to app_runtime;
+
+-- Supabase's API roles exist only on Supabase; make sure they hold nothing here.
+do $$
+declare
+  api_role text;
+begin
+  foreach api_role in array array['anon', 'authenticated', 'service_role'] loop
+    if exists (select 1 from pg_roles where rolname = api_role) then
+      execute format('revoke all on schema app_auth from %I', api_role);
+      execute format('revoke all on all tables in schema app_auth from %I', api_role);
+      execute format('revoke all on all sequences in schema app_auth from %I', api_role);
+      execute format('revoke all on all functions in schema app_auth from %I', api_role);
+    end if;
+  end loop;
+end
+$$;

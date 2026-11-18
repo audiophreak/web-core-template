@@ -93,6 +93,14 @@ database:
     {% if database != 'none' and not zod %}database requires zod: answer zod=true as well (database is never enabled for you).{% endif %}
   help: "Add a PostgreSQL database? none (default), postgres (Docker Compose, PostgreSQL 17) or supabase (local Supabase stack). Requires zod. Adds SQL migrations in supabase/migrations/, a typed server-only data-access layer (`pg`, `server-only`) and a sample items repository; the Supabase option also adds the pinned Supabase CLI as a development dependency. Auth and authorization are not included."
 
+auth:
+  type: yaml  # a strict boolean: see the note above the questions
+  default: false
+  choices: [false, true]
+  validator: >-
+    {% if auth is not boolean %}Answer true or false.{% elif auth and not zod %}auth requires zod: answer zod=true as well (auth is never enabled for you).{% elif auth and not rest_api %}auth requires rest_api: answer rest_api=true as well (auth is never enabled for you).{% elif auth and database == 'none' %}auth requires a database: answer database=postgres or database=supabase as well (auth is never enabled for you).{% endif %}
+  help: "Add authentication? (requires zod, rest_api and a database; adds Better Auth email/password sign-in at /api/auth, a least-privilege runtime database role, owner-scoped items with row-level security and a protected /api/v1/items API. Local development only: email verification, password-reset delivery and public sign-up are deployment responsibilities, see docs/auth.md)"
+
 # Computed: never asked and never recorded. Readable names for conditions used in file names, where an
 # expression such as `rest_api or database != 'none'` would be hard to read. Tests check they always
 # agree with the answers.
@@ -113,4 +121,4 @@ lock_key:
   type: str
   when: false
   default: >-
-    {% set db = ['database-' ~ database] if database != 'none' else [] %}{% set fm = ['forms'] if forms else [] %}{% set zd = ['zod'] if zod else [] %}{% set parts = db + fm + zd %}{{ parts | join('+') if parts else 'base' }}
+    {% set au = ['auth'] if auth else [] %}{% set db = ['database-' ~ database] if database != 'none' else [] %}{% set fm = ['forms'] if forms else [] %}{% set zd = ['zod'] if zod else [] %}{% set parts = au + db + fm + zd %}{{ parts | join('+') if parts else 'base' }}

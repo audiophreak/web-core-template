@@ -1,0 +1,173 @@
+# Authentication and authorization
+
+Email and password sign-in with [Better Auth](https://www.better-auth.com), a least-privilege database role, owner-scoped data enforced by PostgreSQL itself, and a protected REST API. The same code runs on both database providers: this project uses **{{ database }}**.
+
+**Ready for local development and integration testing. Not ready for open registration on the public internet.** Email verification, password-reset delivery and a few deployment settings are yours to provide: see [Not ready for the public internet](#not-ready-for-the-public-internet).
+
+## The decision: one authentication system for both providers
+
+Better Auth runs on PostgreSQL directly, and the application's data access is already provider-independent (`src/server/db`, plain SQL migrations). So authentication is provider-independent too: **Better Auth on `pg` for both `postgres` and `supabase`**. Supabase is the PostgreSQL and local-services provider here; its own Auth service (GoTrue) stays **disabled** in `supabase/config.toml`, and this project does not use Supabase Auth, its JWTs or its Data API for application data. One session system, one authorization model and one set of application behaviour, whichever provider hosts the database.
+
+## How the pieces fit
+
+```mermaid
+flowchart LR
+  browser[Browser or client]
+  subgraph app [Next.js application]
+    authroute["/api/auth/*<br/>Better Auth"]
+    routes["/api/v1/items, /session, /sessions<br/>withAuthentication"]
+    scope["withPrincipal<br/>sets app.user_id for one transaction"]
+    repo[items repository]
+  end
+  subgraph db [PostgreSQL]
+    authtables[(app_auth: user, session, account, ...)]
+    items[(app.items + row level security)]
+  end
+  browser -->|cookie| authroute
+  browser -->|cookie| routes
+  authroute --> authtables
+  routes --> scope --> repo --> items
+```
+
+- **`src/server/auth/`** is the server side: `config.ts` (validated settings), `auth.ts` (the Better Auth instance), `principal.ts` (who is asking), `scope.ts` (`withPrincipal`), `guard.ts` (`withAuthentication` for routes), `runtime-role.ts` (refuses an administrative role), `handler.ts` (the `/api/auth` handler). Every module starts with `import "server-only"`.
+- **`src/lib/auth-client.ts`** is the only authentication module a browser may import: the Better Auth client, with no secret in it.
+- **`supabase/migrations/`** holds the schema, in the same single migration history as everything else (see [database.md](database.md)): `..._create_auth.sql` (the runtime role and Better Auth's tables) and `..._scope_items_to_owner.sql` (ownership and the policies). **Nothing changes the schema at runtime.**
+
+## Flows
+
+All of these are Better Auth's own endpoints under `/api/auth`, called with `Content-Type: application/json` and, from a browser, an `Origin` header (the browser sends it).
+
+| Flow            | Request                                                                                              | Result                                                                                                              |
+| --------------- | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Sign up         | `POST /api/auth/sign-up/email` `{ "email", "password", "name" }`                                     | Creates the user and signs them in. The password must have 12 to 128 characters. Disabled by default in production. |
+| Sign in         | `POST /api/auth/sign-in/email` `{ "email", "password" }`                                             | Sets the session cookie. A wrong password and an unknown email give the same answer.                                |
+| Current session | `GET /api/v1/session`                                                                                | `{ user: { id, email, name }, session: { expiresAt } }`, or the 401 problem.                                        |
+| Your sessions   | `GET /api/v1/sessions`                                                                               | Your own sessions (no tokens), the current one marked.                                                              |
+| End one session | `POST /api/auth/revoke-session` `{ "token" }`                                                        | Revokes it (Better Auth's endpoint; `/api/auth/list-sessions` is where the tokens are).                             |
+| Sign out        | `POST /api/auth/sign-out`                                                                            | Deletes the session and clears the cookie.                                                                          |
+| Change password | `POST /api/auth/change-password` `{ "currentPassword", "newPassword", "revokeOtherSessions": true }` | Changes it; with `revokeOtherSessions` every other session ends.                                                    |
+
+Everything else Better Auth ships is either not enabled (social sign-in, passkeys, organisations) or cannot work without a mail service (see below).
+
+## Session lifecycle and cookies
+
+- A session lasts **7 days** and its expiry is refreshed at most once a day while it is used.
+- Sessions live in the database (`app_auth.session`) and are read on **every** request: there is no signed-cookie cache, so sign-out, revocation, expiry and a password change take effect immediately.
+- The cookie is `better-auth.session_token`, **`HttpOnly`**, **`SameSite=Lax`**, `Path=/`. Its value is signed with `BETTER_AUTH_SECRET`; a tampered or unsigned value is rejected. When `BETTER_AUTH_URL` is `https`, the cookie is also **`Secure`** and gets the `__Secure-` prefix. Tests read the real `Set-Cookie` header for each case.
+- **Better Auth's own endpoints return the session token in some responses** (sign-up, sign-in, `get-session`, `list-sessions`), as part of its API, so the cookie being `HttpOnly` does not stop a script that runs on your origin from reading it by calling them. The endpoints under `/api/v1` never return a token. Treat cross-site scripting as the threat it is (a content security policy, no untrusted HTML) and keep session lifetimes short.
+- CSRF protection stays on. Better Auth refuses state-changing requests whose `Origin` is not trusted, and the API under `/api/v1` does the same (`403 origin_not_allowed`); the cookie is `SameSite=Lax`, bodies must be `application/json`, and no response ever carries a CORS header.
+- **Trusted origins** are `BETTER_AUTH_URL` plus `AUTH_TRUSTED_ORIGINS`, nothing else. Localhost is never added for you, wildcards are rejected, and in production every extra origin must be `https`. A mismatch (`localhost` against `127.0.0.1`, or another port) fails the origin check: set `BETTER_AUTH_URL` to the address you actually use.
+- **Rate limits** are Better Auth's own, stored in the database so they hold across server instances (sign-in, sign-up and password changes are limited to 3 attempts per ten seconds, password-reset and verification requests to 3 per minute, everything else to 60 requests per minute). See [trusted proxies](#not-ready-for-the-public-internet) for how the client address is decided.
+
+## Database roles
+
+| Role                                   | Used by                           | Can do                                                                             |
+| -------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------------- |
+| The owner (`DATABASE_URL`)             | `npm run db:*`, migrations, tests | Everything: it owns the schemas and tables. Never used by the running application. |
+| `app_runtime` (`DATABASE_RUNTIME_URL`) | The running application           | Read and write rows in `app.items` and in Better Auth's five tables, nothing else. |
+
+`app_runtime` is created by a migration **without a login or a password**. `npm run db:init` generates a random password into the git-ignored `.env.local`, and `npm run db:migrate` (or `npm run db:roles`) applies it to the role. It is not a superuser, cannot create roles, databases or schemas, cannot replicate, **cannot bypass row level security**, owns nothing, and has no access to other schemas. `INSERT` and `UPDATE` are granted per column, so it can never set an item's id or timestamps, or change an item's owner.
+
+The application checks this itself: on the first request that needs the database it asks PostgreSQL whether its role is a superuser, can create roles or databases, bypasses row level security, replicates, or owns anything, and **refuses to continue** if so (`UnsafeRuntimeRoleError`, answered as a generic 500). Pointing `DATABASE_RUNTIME_URL` at the owner by mistake therefore fails closed instead of silently disabling the protections.
+
+{% if database == 'supabase' %}The roles are separate from Supabase's own `anon`, `authenticated` and `service_role`: those hold nothing in the `app` and `app_auth` schemas, and the Data API serves only `public` and `graphql_public`, so neither schema is reachable through it, with any of those roles. {% endif %}Row level security and the role are PostgreSQL features, so the model is the same on both providers.
+
+## Authorization
+
+Deny by default, enforced in three layers that do not depend on each other:
+
+1. **The route.** `withAuthentication` answers `401 unauthenticated` before anything else when there is no valid session, and `403 origin_not_allowed` for a state-changing request from an untrusted origin. It passes the handler a `Principal`.
+2. **The repository.** A `Principal` can only be issued by `src/server/auth/principal.ts` after a valid session (a caller cannot invent one from a user id). `withPrincipal` turns it into an owner scope; every repository function takes that scope, gets the owner from it, and filters on it.
+3. **The database.** `withPrincipal` opens a transaction and runs `select set_config('app.user_id', $1, true)`, which lasts for that transaction only. The policies on `app.items` read it through `app.current_user_id()`. With no user set the function returns null, `owner_id = null` is never true, and the role sees and changes **nothing**. So even a statement that forgot its `owner_id` filter, or a raw query, answers for the caller only.
+
+Because the setting is transaction-local, a pooled connection cannot carry one request's identity into the next; tests check this with a single pooled connection and with many users at once.
+
+Another user's item is **404, not 403**: it is indistinguishable from one that does not exist, so ids cannot be probed. There are no roles or permissions in this template; add them when a feature needs them, and answer 403 only for a caller who is known to lack a capability.
+
+The one thing this design trusts is the server code that calls `set_config`. A SQL injection in application code could set it too, which is why every statement uses parameters, `withPrincipal` is the only place that sets it, and a test fails if a route imports the pool directly. Keep it that way.
+
+## Protected API
+
+Under `/api/v1`, in the same format as the rest of the API (RFC 9457 problems, explicit response schemas, no internals):
+
+| Method and path                               | Purpose                                                        |
+| --------------------------------------------- | -------------------------------------------------------------- |
+| `GET /api/v1/items?limit=&offset=`            | Your items, newest first (limit 1 to 100, default 20).         |
+| `POST /api/v1/items`                          | Create an item: `{ "title", "body"? }`. `201` with `Location`. |
+| `GET /api/v1/items/:id`                       | One of your items.                                             |
+| `PATCH /api/v1/items/:id`                     | Change `title` and/or `body`.                                  |
+| `DELETE /api/v1/items/:id`                    | `204`; `404` if it is not yours or does not exist.             |
+| `GET /api/v1/session`, `GET /api/v1/sessions` | See [Flows](#flows).                                           |
+
+Errors: `401 unauthenticated`, `403 origin_not_allowed`, `404 not_found`, `405`, `413`, `415`, `422 validation_failed` (a duplicate title among your own items is a field error), `500 internal_error`. Responses never contain Better Auth rows, password hashes, session tokens, the owner id, connection details or exceptions. The public examples (`/api/v1/app-info`, `/api/v1/examples/validate`) are unchanged and need no session.
+
+## Configuration
+
+`npm run db:init` creates `.env.local` (git-ignored, mode 0600) with every value below that is needed locally. **On an existing project it appends only the lines that are missing and changes nothing else.** `.env.example` shows the shape.
+
+| Variable                                         | Meaning                                                                                                                                                                   |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL`                                   | Administrative connection (migrations, tests, tools).                                                                                                                     |
+| `DATABASE_RUNTIME_URL`                           | The `app_runtime` connection the application uses. Must name the same server and database as `DATABASE_URL`.                                                              |
+| `BETTER_AUTH_SECRET`                             | At least 32 characters, not repetitive. **No default exists**: a missing, short or placeholder value stops authentication from starting. Generated randomly by `db:init`. |
+| `BETTER_AUTH_URL`                                | The origin the application is served from (scheme, host, port; no path). `https` unless it is a loopback address.                                                         |
+| `AUTH_TRUSTED_ORIGINS`                           | Extra trusted origins, comma separated; each a bare origin (no wildcard, no path); `https` in production.                                                                 |
+| `AUTH_ALLOW_SIGN_UP`                             | `true` or `false`. Default: open sign-up is on outside production and **off in production**.                                                                              |
+| `AUTH_TRUSTED_IP_HEADER`, `AUTH_TRUSTED_PROXIES` | See [trusted proxies](#not-ready-for-the-public-internet).                                                                                                                |
+
+Every value is read on the server only. Never give one a `NEXT_PUBLIC_` name. The configuration errors name the variable, never the value.
+
+## Local development
+
+```bash
+npm ci
+npm run db:init     # .env.local with random passwords and a random authentication secret
+npm run db:up       # {% if database == 'postgres' %}PostgreSQL in Docker{% else %}the local Supabase stack{% endif %}
+
+npm run db:migrate  # schema, then the runtime role's password
+npm run dev
+```
+
+Then, with the application at `http://localhost:3000`:
+
+```bash
+curl -i -X POST http://localhost:3000/api/auth/sign-up/email \
+  -H 'content-type: application/json' -H 'origin: http://localhost:3000' \
+  -d '{"email":"me@example.test","password":"a long local passphrase","name":"Me"}'
+```
+
+Send the cookie it sets to `/api/v1/session` and `/api/v1/items`. From a page, use `authClient` from `@/lib/auth-client` for sign-up, sign-in and sign-out, and read the session on the server with `sessionFromHeaders`.
+
+To write a protected route, copy `src/app/api/v1/items/route.ts`: wrap the handler in `withAuthentication`, validate input with a Zod schema, and reach the database only through `withPrincipal` and a repository that takes the scope. For a new table that holds user data, add a migration that gives it an `owner_id`, enables row level security with policies on `app.current_user_id()`, and grants `app_runtime` only what it needs.
+
+## Tests
+
+- `npm run check` includes the unit tests: configuration rules, the guard, the contract of the new schemas, and the checks that keep server code out of browser bundles (`src/server/auth/server-only.test.ts`).
+- `npm run test:db` runs the tests that need PostgreSQL, each in a throwaway database, as the real `app_runtime` role (the session sets `role app_runtime`): sign-up, sign-in, wrong credentials, hashing, sessions, sign-out, revocation, expiry, a password change, cookie attributes, origin checks, rate limits, the runtime role's privileges, row level security with and without a user, the repository, injection attempts, concurrent users on a small pool, and every protected route. `schema.db.test.ts` asks Better Auth's own schema tooling what it would still have to create after the migrations and requires the answer to be nothing, so a Better Auth upgrade that needs more schema is noticed.
+
+## Troubleshooting
+
+- **`Invalid authentication configuration: check BETTER_AUTH_SECRET`**: run `npm run db:init` (it adds the missing lines), or set a random value of at least 32 characters.
+- **`The application database role must not be an owner or an administrator`**: `DATABASE_RUNTIME_URL` points at the owner. Use the `app_runtime` URL that `db:init` wrote, and run `npm run db:migrate`.
+- **`password authentication failed for user "app_runtime"`**: the role has no password yet, or it changed. Run `npm run db:roles`{% if database == 'supabase' %}, which is also needed after `npx supabase db reset`{% endif %}.
+- **`403` on sign-in or on a write from a page**: the `Origin` is not trusted. Make `BETTER_AUTH_URL` the address in the browser's address bar (`localhost` and `127.0.0.1` are different origins).
+- **`429`**: the rate limit. Wait ten seconds.
+- **Sign-up is refused in production**: that is the default; see below.
+- **Items created before authentication existed have no owner** and are invisible to the application. Assign them with the administrative connection, for example `update app.items set owner_id = '<user id>' where owner_id is null;`, or delete them.
+
+## Not ready for the public internet
+
+This project is **local-development ready**. Before it faces the public internet, these are yours to provide and decide; the template does not pretend to cover them:
+
+- **Email verification and password reset.** No mail service is configured, so verification links and reset links cannot be delivered: accounts are not verified and a forgotten password cannot be recovered. Better Auth's `sendVerificationEmail` and `sendResetPassword` hooks are where a mail provider would be connected. Until then keep `AUTH_ALLOW_SIGN_UP` off in production (the default) and create accounts deliberately.
+- **Open registration.** Even with a mail provider, decide on bot protection, a sign-up policy and abuse handling before enabling `AUTH_ALLOW_SIGN_UP=true`.
+- **Trusted proxies.** The client address behind rate limits cannot be taken from a header the client controls. By default no address is trusted, so each limited route shares **one** bucket (it cannot be bypassed by spoofing, and it is also shared by all users). Behind your own reverse proxy, set `AUTH_TRUSTED_IP_HEADER` to the header **your proxy** sets (and overwrites) with the client address, and `AUTH_TRUSTED_PROXIES` to the addresses of your proxies, so spoofed values are discarded. Use only values you have verified on your platform.
+- **Origins and TLS.** Set `BETTER_AUTH_URL` to the public `https` origin and list every other origin on purpose in `AUTH_TRUSTED_ORIGINS`. Terminate TLS in front of the application.
+- **Secrets and the database.** Set `BETTER_AUTH_SECRET` and the database credentials in your platform's secret store (never in the repository), rotate the secret deliberately (it signs cookies, so rotating signs everyone out), and use a managed PostgreSQL with the same two roles. Apply the migrations with the administrative role and give `app_runtime` its password through your platform, not through this project's local tooling (which refuses non-local databases).
+- **Monitoring, logging and account recovery** (audit logs, alerting, lockout policy, support procedures) are not provided.
+
+## Upgrading and removing
+
+- **Enabling authentication on an existing project** (`devkit upgrade --set auth=true`, or `copier update`) adds the files and the two migrations; run `npm run db:init` (it completes `.env.local`) and `npm run db:migrate`. Items you already have stay in the table with no owner (see Troubleshooting). Authentication needs `zod`, `rest_api` and a database, and none of them is switched on for you.
+- **Changing the database provider is not an upgrade** and is refused by `devkit upgrade`; see [database.md](database.md).
+- **Disabling authentication is not automated.** Removing it would delete or orphan user accounts and the ownership of data, and a script must not decide that for you. By hand: take a backup; decide what happens to the `app_auth` tables and to each item's `owner_id`; add a migration for that decision (never edit the two committed ones); then remove `src/server/auth`, `src/lib/auth-client.ts`, the routes under `src/app/api/auth` and the protected routes, and the `better-auth` dependency, and give the application a connection and an authorization model of your own before any data is reachable again.

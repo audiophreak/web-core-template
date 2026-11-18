@@ -1,0 +1,40 @@
+import { z } from "zod";
+import {
+  createItemInputSchema,
+  itemIdSchema,
+  updateItemInputSchema,
+} from "../item";
+
+/**
+ * /api/v1/items: the signed-in caller's own items. Responses carry the item's public fields only
+ * (never the owner id, which is implied by the session), with timestamps as ISO 8601 strings.
+ */
+export const itemResponseSchema = z.strictObject({
+  id: itemIdSchema,
+  title: z.string(),
+  body: z.string(),
+  createdAt: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+});
+
+export const itemListResponseSchema = z.strictObject({
+  items: z.array(itemResponseSchema).max(100),
+  limit: z.int().min(1).max(100),
+  offset: z.int().min(0),
+});
+
+/** POST body: `{ "title": "...", "body": "..." }`; the body is optional. */
+export const createItemRequestSchema = createItemInputSchema;
+
+/** PATCH body: at least one of `title` and `body`. */
+export const updateItemRequestSchema = updateItemInputSchema;
+
+const digits = z.string().regex(/^\d{1,6}$/, "Use a whole number");
+
+/** Query string of the list endpoint: both parameters are optional whole numbers. */
+export const listItemsQuerySchema = z.strictObject({
+  limit: digits.transform(Number).pipe(z.int().min(1).max(100)).default(20),
+  offset: digits.transform(Number).pipe(z.int().min(0).max(100_000)).default(0),
+});
+
+export type ItemResponse = z.infer<typeof itemResponseSchema>;

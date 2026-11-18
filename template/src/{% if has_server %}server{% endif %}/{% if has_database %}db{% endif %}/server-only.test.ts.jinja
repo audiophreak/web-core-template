@@ -10,7 +10,8 @@ import { describe, expect, it } from "vitest";
 const SRC = join(process.cwd(), "src");
 const GUARDED = [
   join(SRC, "server", "db") + sep,
-  join(SRC, "server", "items") + sep,
+  join(SRC, "server", "items") + sep,{% if auth %}
+  join(SRC, "server", "auth") + sep,{% endif %}
 ];
 const SERVER = join(SRC, "server") + sep;
 const ROUTES = join(SRC, "app", "api") + sep;
@@ -87,7 +88,23 @@ describe("server-only data access", () => {
     expect(offenders.map((file) => file.replace(SRC, "src"))).toEqual([]);
   });
 
-  it("is not imported by any route handler yet: authentication has to exist first", () => {
+{% if auth %}  it("is reached from route handlers only through the guards and the authorized repository", () => {
+    const direct = [join(SRC, "server", "db") + sep];
+    const allowed = [join(SRC, "server", "db", "errors.ts")];
+    const routes = FILES.filter(
+      (file) => /[\\/]route\.tsx?$/.test(file) && !isTest(file),
+    );
+    const offenders = routes.filter((file) =>
+      importsOf(file).some(
+        (target) =>
+          direct.some((prefix) => target.startsWith(prefix)) &&
+          !allowed.includes(target),
+      ),
+    );
+    expect(offenders.map((file) => file.replace(SRC, "src"))).toEqual([]);
+  });
+
+{% else %}  it("is not imported by any route handler yet: authentication has to exist first", () => {
     const routes = FILES.filter(
       (file) => /[\\/]route\.tsx?$/.test(file) && !isTest(file),
     );
@@ -99,7 +116,7 @@ describe("server-only data access", () => {
     expect(offenders.map((file) => file.replace(SRC, "src"))).toEqual([]);
   });
 
-  it("is never reached by a client component, directly or through what it imports", () => {
+{% endif %}  it("is never reached by a client component, directly or through what it imports", () => {
     const reaches = (start: string): boolean => {
       const seen = new Set<string>();
       const queue = [start];

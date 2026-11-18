@@ -91,8 +91,18 @@ them with `Request` objects, so `npm run check` needs no running server.
 A PostgreSQL database for local development, with version-controlled SQL migrations and a typed,
 server-only data-access layer. Provider: **{{ database }}**. Start with `docs/database.md`:
 `npm run db:init`, `npm run db:up`, `npm run db:migrate`. The sample `app.items` table and its repository
-(`src/server/items/`) show the pattern; `npm run test:db` runs the real-database tests. There is no
-authentication yet, so nothing in the application's routes reaches the database.
+(`src/server/items/`) show the pattern; `npm run test:db` runs the real-database tests.{% if auth %} The
+application connects as a least-privilege role, never as the owner.{% else %} There is no
+authentication yet, so nothing in the application's routes reaches the database.{% endif %}
+
+{% endif %}{% if auth %}## Authentication
+
+Email and password sign-in with Better Auth, on either database provider: sessions in PostgreSQL, a
+least-privilege `app_runtime` database role, items owned by their user and protected by row level security,
+and a protected API (`/api/v1/items`, `/api/v1/session`). Start with `docs/auth.md`: it covers the flows,
+the cookies, the roles and the authorization model, and it lists what a public deployment still has to
+provide (email verification, password-reset delivery, trusted proxies and origins). This is ready for
+local development and integration testing, not for open registration on the public internet.
 
 {% endif %}{% endif %}## Template updates
 

@@ -1,0 +1,145 @@
+import "server-only";
+import { z } from "zod";
+import {
+  createItemInputSchema,
+  itemIdSchema,
+  itemSchema,
+  listItemsOptionsSchema,
+  updateItemInputSchema,
+  type CreateItemInput,
+  type Item,
+  type ListItemsOptions,
+  type UpdateItemInput,
+} from "@/lib/schemas";
+import type { OwnerScope } from "@/server/auth/scope";
+import { DatabaseError, toDatabaseError } from "@/server/db/errors";
+
+/**
+ * The owner-scoped repository over `app.items`: the only place that knows its SQL. Every function takes
+ * the `scope` of `withPrincipal` (src/server/auth/scope.ts): a transaction in which the database knows
+ * who is asking. The owner is taken from that scope, never from an argument, and every statement filters
+ * on it. That is the second layer: row-level security on the table (supabase/migrations/) answers
+ * for the same user even if a statement here forgot the filter, so another user's item is simply "not
+ * found". Input is validated with the shared Zod schemas, SQL is parameterized, failures are DatabaseErrors.
+ */
+const COLUMNS = "id, title, body, created_at, updated_at";
+
+const rowSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  body: z.string(),
+  created_at: z.date(),
+  updated_at: z.date(),
+});
+
+function parseInput<S extends z.ZodType>(
+  schema: S,
+  value: unknown,
+): z.output<S> {
+  const parsed = schema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  // Rule descriptions only: Zod's messages name the rule, not the submitted value.
+  const reasons = parsed.error.issues.map(
+    (issue) => `${issue.path.join(".") || "input"}: ${issue.message}`,
+  );
+  throw new DatabaseError(
+    "invalid_input",
+    `The input is not valid (${reasons.join("; ")})`,
+  );
+}
+
+async function run(scope: OwnerScope, text: string, values: unknown[]) {
+  try {
+    return await scope.db.query(text, values);
+  } catch (error) {
+    throw toDatabaseError(error);
+  }
+}
+
+function toItem(row: unknown): Item {
+  const parsed = rowSchema.parse(row);
+  return itemSchema.parse({
+    id: parsed.id,
+    title: parsed.title,
+    body: parsed.body,
+    createdAt: parsed.created_at,
+    updatedAt: parsed.updated_at,
+  });
+}
+
+export async function createItem(
+  scope: OwnerScope,
+  input: CreateItemInput,
+): Promise<Item> {
+  const { title, body } = parseInput(createItemInputSchema, input);
+  const result = await run(
+    scope,
+    `insert into app.items (owner_id, title, body) values ($1, $2, $3) returning ${COLUMNS}`,
+    [scope.userId, title, body],
+  );
+  return toItem(result.rows[0]);
+}
+
+/** One of the caller's items; another user's item and a missing one are both `not_found`. */
+export async function getItem(scope: OwnerScope, id: string): Promise<Item> {
+  const itemId = parseInput(itemIdSchema, id);
+  const result = await run(
+    scope,
+    `select ${COLUMNS} from app.items where id = $1 and owner_id = $2`,
+    [itemId, scope.userId],
+  );
+  if (result.rows.length === 0) throw new DatabaseError("not_found");
+  return toItem(result.rows[0]);
+}
+
+export async function listItems(
+  scope: OwnerScope,
+  options: ListItemsOptions = {},
+): Promise<Item[]> {
+  const { limit, offset } = parseInput(listItemsOptionsSchema, options);
+  const result = await run(
+    scope,
+    `select ${COLUMNS} from app.items where owner_id = $1 order by created_at desc, id limit $2 offset $3`,
+    [scope.userId, limit, offset],
+  );
+  return result.rows.map(toItem);
+}
+
+export async function updateItem(
+  scope: OwnerScope,
+  id: string,
+  input: UpdateItemInput,
+): Promise<Item> {
+  const itemId = parseInput(itemIdSchema, id);
+  const changes = parseInput(updateItemInputSchema, input);
+  // Column names come from this fixed list, never from the caller; values are always parameters.
+  const assignments: string[] = [];
+  const values: unknown[] = [itemId, scope.userId];
+  for (const column of ["title", "body"] as const) {
+    if (changes[column] !== undefined) {
+      values.push(changes[column]);
+      assignments.push(`${column} = $${values.length}`);
+    }
+  }
+  const result = await run(
+    scope,
+    `update app.items set ${assignments.join(", ")}, updated_at = now() where id = $1 and owner_id = $2 returning ${COLUMNS}`,
+    values,
+  );
+  if (result.rows.length === 0) throw new DatabaseError("not_found");
+  return toItem(result.rows[0]);
+}
+
+/** Deletes one of the caller's items; resolves to false when there was nothing of theirs to delete. */
+export async function deleteItem(
+  scope: OwnerScope,
+  id: string,
+): Promise<boolean> {
+  const itemId = parseInput(itemIdSchema, id);
+  const result = await run(
+    scope,
+    "delete from app.items where id = $1 and owner_id = $2 returning id",
+    [itemId, scope.userId],
+  );
+  return result.rows.length > 0;
+}

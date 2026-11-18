@@ -1,0 +1,46 @@
+-- Items belong to a user, and the database enforces it.
+--
+-- The application sets `app.user_id` for the length of one transaction (src/server/auth/scope.ts)
+-- and the policies below read it through `app.current_user_id()`. With no user set the function returns
+-- null, `owner_id = null` is never true, and the runtime role sees and changes nothing: deny by default.
+-- The runtime role does not own the table and cannot bypass row level security, so these policies bind
+-- it even if application code forgets a filter.
+--
+-- Rows created before authentication existed have no owner. They stay in the table, invisible to the
+-- runtime role; assign or remove them with an administrative connection (docs/auth.md).
+
+grant usage on schema app to app_runtime;
+
+create function app.current_user_id() returns text
+  language sql stable parallel safe
+  as $$ select nullif(current_setting('app.user_id', true), '') $$;
+
+revoke all on function app.current_user_id() from public;
+grant execute on function app.current_user_id() to app_runtime;
+
+alter table app.items add column owner_id text references app_auth."user" ("id") on delete cascade;
+
+-- A title is unique per owner. The earlier global index would tell one user that another already
+-- uses a title, so it goes.
+drop index app.items_title_key;
+create unique index items_owner_title_key on app.items (owner_id, lower(title));
+create index items_owner_created_idx on app.items (owner_id, created_at desc, id);
+
+-- Column level grants: the runtime role can never choose an id or a timestamp, or move an item to
+-- another owner (owner_id is writable on insert only, and the policy pins it to the caller).
+grant select, delete on app.items to app_runtime;
+grant insert (owner_id, title, body) on app.items to app_runtime;
+grant update (title, body, updated_at) on app.items to app_runtime;
+
+create policy items_select_own on app.items for select to app_runtime
+  using (owner_id = app.current_user_id());
+
+create policy items_insert_own on app.items for insert to app_runtime
+  with check (owner_id = app.current_user_id());
+
+create policy items_update_own on app.items for update to app_runtime
+  using (owner_id = app.current_user_id())
+  with check (owner_id = app.current_user_id());
+
+create policy items_delete_own on app.items for delete to app_runtime
+  using (owner_id = app.current_user_id());

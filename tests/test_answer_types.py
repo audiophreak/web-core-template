@@ -32,9 +32,18 @@ VALID = [
 INVALID = ["banana", "1", "0", "2", "", " ", "maybe", "tru", "truee", "null", "~", "y", "n", "tRuE", "yEs", 1, 0, 2, None]
 
 
-def prerequisites(name: str) -> dict[str, bool]:
-    """Answers a feature needs before its own answer can be judged (forms requires zod)."""
-    return {required: True for required in REGISTRY[name].requires} if name in REGISTRY else {}
+def prerequisites(name: str) -> dict[str, bool | str]:
+    """Answers a feature needs before its own answer can be judged (forms requires zod).
+
+    Followed transitively, and a choice feature is answered with its first provider (auth requires
+    a database, which requires zod).
+    """
+    answers: dict[str, bool | str] = {}
+    for required in REGISTRY[name].requires if name in REGISTRY else ():
+        feature = REGISTRY[required]
+        answers.update(prerequisites(required))
+        answers[required] = feature.choices[0] if feature.choices else True
+    return answers
 
 
 def recorded(project: Path, name: str):
@@ -89,7 +98,7 @@ def _copier(template_repo: Path, destination: Path, *data: str) -> subprocess.Co
 def test_the_real_copier_command_line_rejects_invalid_booleans(
     template_repo: Path, tmp_path: Path, name: str, given: str
 ) -> None:
-    result = _copier(template_repo, tmp_path / "cli", *[f"{r}=true" for r in prerequisites(name)], f"{name}={given}")
+    result = _copier(template_repo, tmp_path / "cli", *[f"{r}={str(v).lower() if isinstance(v, bool) else v}" for r, v in prerequisites(name).items()], f"{name}={given}")
     assert result.returncode != 0
     assert name in result.stderr
     assert not (tmp_path / "cli").exists()
@@ -100,7 +109,7 @@ def test_the_real_copier_command_line_rejects_invalid_booleans(
 def test_the_real_copier_command_line_accepts_valid_booleans(
     template_repo: Path, tmp_path: Path, name: str, given: str, expected: bool
 ) -> None:
-    result = _copier(template_repo, tmp_path / "cli", *[f"{r}=true" for r in prerequisites(name)], f"{name}={given}")
+    result = _copier(template_repo, tmp_path / "cli", *[f"{r}={str(v).lower() if isinstance(v, bool) else v}" for r, v in prerequisites(name).items()], f"{name}={given}")
     assert result.returncode == 0, result.stderr
     assert recorded(tmp_path / "cli", name) is expected
 

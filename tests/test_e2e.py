@@ -87,10 +87,15 @@ def _record_evidence(name: str, project: Path, check: subprocess.CompletedProces
         ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "database": "supabase"}, "e2e-sb-app"),
         ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "forms": True, "rest_api": True, "database": "postgres", "cache_components": False}, "e2e-pg-all-plain-app"),
         ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "forms": True, "rest_api": True, "database": "supabase"}, "e2e-sb-all-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "rest_api": True, "database": "postgres", "auth": True}, "e2e-pg-auth-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "forms": True, "rest_api": True, "database": "postgres", "auth": True, "cache_components": False}, "e2e-pg-auth-forms-plain-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "rest_api": True, "database": "supabase", "auth": True, "cache_components": False}, "e2e-sb-auth-plain-app"),
+        ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "forms": True, "rest_api": True, "database": "supabase", "auth": True}, "e2e-sb-auth-forms-app"),
     ],
     ids=["defaults", "awkward-description", "cache-components-off", "zod", "zod-and-cache-components-off", "forms", "forms-and-cache-components-off",
          "rest_api", "rest_api-awkward-and-cache-components-off", "forms-and-rest_api", "forms-and-rest_api-cache-components-off",
-         "postgres", "supabase", "postgres-with-everything-cache-components-off", "supabase-with-everything"],
+         "postgres", "supabase", "postgres-with-everything-cache-components-off", "supabase-with-everything",
+         "postgres-auth", "postgres-auth-forms-cache-components-off", "supabase-auth-cache-components-off", "supabase-auth-forms"],
 )
 def test_generated_app_installs_and_passes_the_validation_gate(
     template_repo: Path, tmp_path: Path, answers: dict, name: str
@@ -150,6 +155,21 @@ def test_generated_app_installs_and_passes_the_validation_gate(
         for behavior in ("rejects malformed JSON", "enforces the limit while streaming", "is never reached by a client component",
                          "keeps the error codes", "does not echo the submitted text", "makes no network request"):  # fmt: skip
             assert behavior in result.stdout, behavior
+        assert "skipped" not in result.stdout.lower().replace("0 skipped", "")
+    if answers.get("auth"):
+        # The authentication feature's offline tests must have run inside the gate; the real-database ones
+        # (`npm run test:db`) are covered by tests/test_auth_database.py.
+        result = subprocess.run(
+            ["npm", "run", "-s", "test", "--", "src/server/auth", "src/lib/schemas/v1", "--reporter=verbose"],
+            cwd=project, capture_output=True, text=True, timeout=300, check=False,
+        )  # fmt: skip
+        assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
+        for name in ("config.test.ts", "guard.test.ts", "server-only.test.ts", "auth-contract.test.ts"):
+            assert name in result.stdout, name
+        for behavior in ("rejects the placeholder from .env.example", "refuses a state-changing request from an origin that is not trusted",
+                         "starts every module with import", "commits no authentication secret", "keeps the fields of the session response"):  # fmt: skip
+            assert behavior in result.stdout, behavior
+        assert "db.test.ts" not in result.stdout
         assert "skipped" not in result.stdout.lower().replace("0 skipped", "")
 
 

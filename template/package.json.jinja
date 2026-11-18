@@ -20,11 +20,13 @@
     "db:logs": "node scripts/db/cli.mjs logs",
     "db:migrate": "node scripts/db/cli.mjs migrate",
     "db:verify": "node scripts/db/cli.mjs verify",
-    "db:lock": "node scripts/db/cli.mjs lock",
+    "db:lock": "node scripts/db/cli.mjs lock",{% if auth %}
+    "db:roles": "node scripts/db/cli.mjs roles",{% endif %}
     "test:db": "vitest run --config vitest.db.config.mts"{% endif %}
   },
   "dependencies": {
     {% if forms %}"@hookform/resolvers": "5.9.2",
+    {% endif %}{% if auth %}"better-auth": "1.7.15",
     {% endif %}"class-variance-authority": "0.7.1",
     "cn": "0.5.0",
     "lucide-react": "1.63.0",

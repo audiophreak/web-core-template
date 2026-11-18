@@ -16,7 +16,9 @@ const STATUS = {
   method_not_allowed: 405,
   not_found: 404,
   internal_error: 500,
-} as const;
+{% if auth %}  unauthenticated: 401,
+  origin_not_allowed: 403,
+{% endif %}} as const;
 
 describe("problem", () => {
   it.each(problemCodes)(
