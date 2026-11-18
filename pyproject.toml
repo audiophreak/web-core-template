@@ -22,6 +22,10 @@ python-downloads = "never"
 testpaths = ["tests"]
 pythonpath = ["tools"]
 addopts = "-ra"
+# Each end-to-end test installs a whole application (hundreds of megabytes of node_modules). Pytest itself
+# removes the temporary directory of a test that passed, and keeps the ones that failed for inspection,
+# so a run does not fill the disk of a CI runner. (This repository's own code deletes nothing.)
+tmp_path_retention_policy = "failed"
 markers = [
   "e2e: generates a project and runs npm ci / npm run check (slow, needs network and Node 26)",
   "db: runs a real database in Docker (needs a running Docker daemon; CI runs these in their own job)",

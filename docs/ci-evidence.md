@@ -27,6 +27,13 @@ skip counts, with reasons).
 (`github_sha`). The evidence is tied to the *branch tip you reviewed* (`commit_under_test`, also in
 the artifact and suite names). Both are recorded.
 
+## Disk space
+
+The end-to-end tests install an application each (with `node_modules`), and the authentication apps are the
+largest. `tmp_path_retention_policy = "failed"` in `pyproject.toml` makes pytest remove the directory of every test
+that passed as soon as it finishes and keep only the failed ones, so a run does not fill the runner's disk (an
+earlier run of this suite did, and the runner stopped with "No space left on device" without a test failing).
+
 ## The database job
 
 The tests that need Docker (marker `db`: PostgreSQL containers and the local Supabase stack) run in their own
