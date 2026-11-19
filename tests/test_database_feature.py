@@ -257,7 +257,7 @@ def test_the_provider_switch_boundary_is_documented_in_the_generated_project(app
 
 
 def test_every_supported_configuration_renders_with_exactly_its_selection_and_its_lockfile(template_repo: Path, tmp_path: Path) -> None:
-    assert len(CONFIGURATIONS) == 17 and len(f.lock_keys(REGISTRY)) == 11
+    assert len(CONFIGURATIONS) == 21 and len(f.lock_keys(REGISTRY)) == 11
     for index, selection in enumerate(CONFIGURATIONS):
         project = tmp_path / f"c{index}"
         render(template_repo, project, **f.answers(selection, REGISTRY))

@@ -1,0 +1,13 @@
+// Regenerates openapi/openapi.json from the Zod schemas: `npm run openapi:generate`.
+// It runs the one test file that knows how to write the contract with writing switched on, then runs
+// it again with writing off, so a generated file that does not verify fails here and not in CI.
+import { spawnSync } from "node:child_process";
+
+const run = (write) =>
+  spawnSync("npx", ["vitest", "run", "src/lib/openapi/document.test.ts"], {
+    stdio: "inherit",
+    env: { ...process.env, OPENAPI_WRITE: write },
+  }).status;
+
+const written = run("1");
+process.exit((written === 0 ? run("0") : written) ?? 1);

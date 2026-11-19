@@ -2,6 +2,30 @@
 
 Versions are git tags (`vMAJOR.MINOR.PATCH`). In 0.x, a minor bump may be breaking.
 
+## 0.7.0
+
+Optional **native-client** support. Additive: with `native_client` off (the default) every configuration is
+byte-identical to 0.6.1 apart from `.copier-answers.yml` (which gains `native_client: false`). No dependency is
+added and no lockfile changes.
+
+- New optional feature **`native_client`** (default off; requires `auth`; never enables it for you):
+  - Better Auth's **bearer plugin** (`requireSignature: true`): native clients send the signed session token from
+    sign-in's `set-auth-token` header as `Authorization: Bearer`. One session table, one expiry, one revocation
+    for cookies and bearer tokens; unsigned, forged and malformed tokens are `401 unauthenticated`; origin and
+    CSRF checks and the rate limits are unchanged. A password change that revokes other sessions rotates the
+    current token (documented).
+  - A deterministic **OpenAPI 3.1** contract of `/api/v1` in `openapi/openapi.json`, generated from the Zod
+    schemas and verified by `npm run check` (drift, route coverage, security requirements, problem statuses, bounds);
+    `npm run openapi:generate` regenerates it. Better Auth's own endpoints stay outside the contract.
+  - `docs/native-client.md`.
+  - `.prettierignore` and `eslint.config.mjs` leave a native iOS layer's `ios/` (and `.copier-answers.ios.yml`) alone, and `AGENTS.md` tells agents
+    to read `ios/AGENTS.md`: the web tooling must not format or lint another template's files. (The only other changed files with
+    the feature on are `auth.ts`, `package.json` and `AGENTS.md`.)
+  - Response schemas allow unknown fields, and a response string enum (the problem `code`) is an open string whose known
+    values are `examples`: a generated client must not fail on a value added within v1. Requests stay strict.
+- Tests: `tests/test_native_client*.py`, two end-to-end apps; the feature matrix grows from 16 to 20 selections, the
+  lock matrix stays at 11.
+
 ## 0.6.1
 
 Security patch. **Better Auth 1.7.15 to 1.7.16 (exact)**, the release that fixes 12 advisories. Nothing else

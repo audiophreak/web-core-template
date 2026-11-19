@@ -91,11 +91,13 @@ def _record_evidence(name: str, project: Path, check: subprocess.CompletedProces
         ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "forms": True, "rest_api": True, "database": "postgres", "auth": True, "cache_components": False}, "e2e-pg-auth-forms-plain-app"),
         ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "rest_api": True, "database": "supabase", "auth": True, "cache_components": False}, "e2e-sb-auth-plain-app"),
         ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "forms": True, "rest_api": True, "database": "supabase", "auth": True}, "e2e-sb-auth-forms-app"),
+        ({"app_description": NEUTRAL_DESCRIPTION, "zod": True, "rest_api": True, "database": "postgres", "auth": True, "native_client": True}, "e2e-pg-native-app"),
+        ({"app_description": AWKWARD_DESCRIPTION, "zod": True, "forms": True, "rest_api": True, "database": "supabase", "auth": True, "native_client": True, "cache_components": False}, "e2e-sb-native-forms-plain-app"),
     ],
     ids=["defaults", "awkward-description", "cache-components-off", "zod", "zod-and-cache-components-off", "forms", "forms-and-cache-components-off",
          "rest_api", "rest_api-awkward-and-cache-components-off", "forms-and-rest_api", "forms-and-rest_api-cache-components-off",
          "postgres", "supabase", "postgres-with-everything-cache-components-off", "supabase-with-everything",
-         "postgres-auth", "postgres-auth-forms-cache-components-off", "supabase-auth-cache-components-off", "supabase-auth-forms"],
+         "postgres-auth", "postgres-auth-forms-cache-components-off", "supabase-auth-cache-components-off", "supabase-auth-forms", "postgres-native-client", "supabase-native-client-forms-cache-components-off"],
 )
 def test_generated_app_installs_and_passes_the_validation_gate(
     template_repo: Path, tmp_path: Path, answers: dict, name: str
@@ -171,6 +173,16 @@ def test_generated_app_installs_and_passes_the_validation_gate(
             assert behavior in result.stdout, behavior
         assert "db.test.ts" not in result.stdout
         assert "skipped" not in result.stdout.lower().replace("0 skipped", "")
+    if answers.get("native_client"):
+        # The contract's drift test ran inside the gate, and `openapi:generate` reproduces the committed file.
+        result = subprocess.run(["npm", "run", "-s", "test", "--", "src/lib/openapi", "src/server/api/openapi-contract", "--reporter=verbose"], cwd=project, capture_output=True, text=True, timeout=300, check=False)
+        assert result.returncode == 0, result.stdout[-2000:] + result.stderr[-2000:]
+        for behavior in ("is exactly what the Zod schemas", "documents every implemented operation and nothing else", "requires the bearer scheme exactly where", "uses the status each stable problem code is really sent with"):
+            assert behavior in result.stdout, behavior
+        before = (project / "openapi/openapi.json").read_bytes()
+        regenerated = subprocess.run(["npm", "run", "-s", "openapi:generate"], cwd=project, capture_output=True, text=True, timeout=300, check=False)
+        assert regenerated.returncode == 0, regenerated.stdout[-1500:]
+        assert (project / "openapi/openapi.json").read_bytes() == before  # regenerating changes nothing
 
 
 def test_evidence_is_recorded_before_the_gate_verdict() -> None:

@@ -59,7 +59,13 @@ The application's requirements are not defined yet. Do not introduce architectur
   `app_runtime`: never run it as the owner, never grant it more than a table needs, and give every table
   that holds user data an `owner_id` with row level security. Never disable the origin or CSRF checks, trust
   a client-supplied header for the client address, commit a secret, or answer 403 where a missing resource
-  (404) would not reveal that it exists. See `docs/auth.md`.{% endif %}{% endif %}
+  (404) would not reveal that it exists. See `docs/auth.md`.{% if native_client %}
+- Native clients (an iOS app) call `/api/v1` with `Authorization: Bearer <session token>`, the same session as the
+  browser cookie. The API contract is `openapi/openapi.json`, generated from the Zod schemas: after changing a
+  schema or a route, run `npm run openapi:generate` and commit the result (`npm run check` fails on a stale
+  file). Never put the token in a URL, a log or a response body of the application API. See `docs/native-client.md`.
+  An `ios/` directory, if present, is a separate template layer with its own `ios/AGENTS.md` and
+  `.copier-answers.ios.yml`: read that before touching it, and do not edit it from web work.{% endif %}{% endif %}{% endif %}
 - Enforce authorization on the server, close to the data, never only in the UI.
 - Keep secrets in environment variables; never commit them, log them, or expose them to
   the browser (only `NEXT_PUBLIC_*` variables reach the client — never put secrets there).

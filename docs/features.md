@@ -407,3 +407,35 @@ Neither is an upgrade. A Copier validator cannot see the previous answer, so the
 `auth=false` on a project that has it (a test pins that raw `copier update` removes the generated files and
 leaves the user's work and the database alone); `devkit upgrade` refuses it. The generated `docs/auth.md`
 lists the manual steps.
+
+## The `native_client` feature
+
+A boolean, default off, **requires `auth`** (and so `zod`, `rest_api` and a database; none is enabled for you).
+It adds no npm dependency (`npm: false`), so it shares the lockfile of the matching `auth` configuration.
+
+- **Bearer tokens.** Better Auth's documented `bearer` plugin, with `requireSignature: true`, in
+  `src/server/auth/auth.ts` (the only application code that changes). The browser cookie architecture is
+  untouched; the plugin turns `Authorization: Bearer <signed token>` into the same session cookie before the
+  session is read, so there is one session table, one expiry and one revocation. Nothing is created for native
+  clients: no second token system, no second database.
+- **Contract.** `openapi/openapi.json`, OpenAPI 3.1, generated from the Zod schemas by
+  `src/lib/openapi/document.ts` (JSON Schema from `z.toJSONSchema`, with `$ref`s between named schemas) and
+  verified by `src/lib/openapi/document.test.ts` inside `npm run check`: committed file equals generated file;
+  every implemented operation is documented and nothing else is; protected routes require `bearerAuth` and
+  public ones do not; every documented problem status is the one the handlers send; the documented list bounds
+  are the ones the Zod schema enforces. `npm run openapi:generate` rewrites the file.
+- **Forward compatibility.** In responses an object allows fields the document does not list, and a string enum
+  (the problem `code`) is an open string whose known values are `examples`: within v1 values are only added, and a generated
+  client with a closed enum would fail on one it does not know. Requests stay strict.
+- **Boundary.** The contract is the API this application owns. Better Auth's endpoints (`/api/auth/*`: sign-up,
+  sign-in, sign-out, and the `set-auth-token` response header) are the library's documented behaviour, not
+  re-described here; a native client calls them through a small tested adapter. Better Auth's own early-stage
+  OpenAPI plugin is not used.
+- **Byte identity.** With the feature off every configuration is byte-identical to 0.6.1
+  (`tools/compare_release.py v0.6.1 ...`); with it on, only `auth.ts`, `package.json` (one script), `AGENTS.md`, `.prettierignore` and
+  `eslint.config.mjs` (both learn to leave the native iOS layer's `ios/` alone) and the new files differ.
+- **Tests.** `tests/test_native_client.py` (real database, real production server, both providers: sign-in
+  without cookie or origin, signature enforcement, forged tokens, CRUD and ownership, sign-out, revocation,
+  password change rotation, expiry, cookie clients unchanged, origins, rate limits, logs, provider equivalence),
+  `tests/test_native_client_feature.py`, `tests/test_native_client_upgrade.py` (real published v0.6.1) and two
+  end-to-end apps.

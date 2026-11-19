@@ -53,7 +53,12 @@ for you).
 migrations after yours. Then run `npm ci`, `npm run db:init` (it appends the runtime password and the
 authentication secret to your `.env.local` and changes nothing else) and `npm run db:migrate`. Rows in
 `app.items` from before authentication have no owner and are invisible to the application until you assign
-them (see the generated `docs/auth.md`). **Disabling authentication is not an upgrade**: a raw
+them (see the generated `docs/auth.md`). `native_client` (`--data native_client=true`) can be switched on for a project that already has `auth`; it is refused
+otherwise. It adds the bearer plugin to `src/server/auth/auth.ts`, `openapi/openapi.json`, `npm run openapi:generate`
+and `docs/native-client.md`; it adds no dependency and changes no lockfile. Disabling it later is a code change
+(remove the plugin and the contract) that you make by hand.
+
+**Disabling authentication is not an upgrade**: a raw
 `copier update --data auth=false` removes the generated files but not the data, and the migrations and
 accounts need a decision of yours; `devkit upgrade` refuses it.
 
