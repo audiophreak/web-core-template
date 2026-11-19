@@ -30,3 +30,8 @@ features:
     requires: [zod, rest_api, database]
     conflicts: []
     npm: true
+  native_client:
+    summary: Bearer-token authentication for native clients (Better Auth bearer plugin) and a deterministic OpenAPI 3.1 contract for /api/v1, generated from the Zod schemas
+    requires: [auth]
+    conflicts: []
+    npm: false

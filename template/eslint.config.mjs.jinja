@@ -15,7 +15,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
-  ]),
+{% if native_client %}    // The native iOS layer (ios/) is a separate template with its own tooling.
+    "ios/**",
+{% else %}{% endif %}  ]),
 ]);
 
 export default eslintConfig;

@@ -1,0 +1,67 @@
+# Native clients
+
+This project accepts native (non-browser) clients, such as an iOS app, in addition to the browser. The server
+side is this document's subject; a native app lives in its own template and is not part of this project's source.
+
+## One session system, two ways to present it
+
+- **Browsers** keep using the Better Auth session cookie (`HttpOnly`, `SameSite=Lax`, `Secure` over https).
+  Nothing about it changed.
+- **Native clients** send `Authorization: Bearer <token>`. Better Auth's documented
+  [bearer plugin](https://better-auth.com/docs/plugins/bearer) turns that header into the same session cookie
+  before the session is read, so there is **one** session table, one expiry, one revocation and one
+  authorization model. There is no second token system and no second database.
+- The plugin runs with `requireSignature: true`: the token is the **signed** value (`token.signature`), exactly the
+  cookie's value. A bare database token, a token with a wrong signature and anything else is an anonymous request
+  (`401`, code `unauthenticated`).
+
+## Signing in from a native client
+
+Native clients use Better Auth's own endpoints (they are the library's contract, not this application's):
+
+| Step                 | Request                                                  | Result                                           |
+| -------------------- | -------------------------------------------------------- | ------------------------------------------------ |
+| Sign up (if allowed) | `POST /api/auth/sign-up/email` `{email, password, name}` | `200`, header `set-auth-token`                   |
+| Sign in              | `POST /api/auth/sign-in/email` `{email, password}`       | `200`, header `set-auth-token`                   |
+| Sign out             | `POST /api/auth/sign-out` with the bearer header         | `200`; the session is deleted, the token is dead |
+
+Send **no** `Origin` header and no cookie: a native client is not a browser. The origin checks stay on: a request
+that names an origin which is not trusted is refused (`403`), with or without a token, so a web page cannot use
+a token even if it had one. The sign-in routes share the rate limits described in [auth.md](auth.md).
+
+**Adopt a new token whenever a response carries `set-auth-token`.** Sign-in and sign-up always do. A password
+change that revokes other sessions replaces the current session as well, so the old token stops working and the
+response brings the new one; a client that keeps the old token is signed out.
+
+`set-auth-token` is the only place the token appears for a native client to read. The application's own
+`/api/v1` responses never contain it. Keep it in the platform's secure storage (the iOS Keychain), never in a
+URL, a log, a preference file or source code.
+
+> **Boundary.** The OpenAPI contract below describes the API this application _owns_ (`/api/v1`). Token
+> acquisition (`/api/auth/*`) is Better Auth's documented behaviour and is called by a small, separately
+> tested adapter in the client rather than being re-described here, so the contract does not drift with the
+> library. Better Auth's own response bodies (sign-in, sign-up, `/api/auth/get-session`) include the session
+> token; `/api/v1/*` never does.
+
+## The contract: `openapi/openapi.json`
+
+An **OpenAPI 3.1** document for `/api/v1`: the public endpoints, the protected item and session endpoints, the
+request and response schemas, RFC 9457 problem details with every stable `code`, the `bearerAuth` security
+scheme, and the status codes and headers (`Location`, `Allow`, `Cache-Control`).
+
+- It is **generated**, not written: the schemas come from the Zod schemas the handlers validate with
+  (`src/lib/schemas/v1`), the operation list is `src/lib/openapi/document.ts`.
+- `npm run openapi:generate` rewrites it. `npm run check` (and so CI) fails when the committed file differs from
+  what the schemas generate, when a route has no operation, when an operation has no route, when a protected
+  route is not marked as needing the bearer scheme, or when a documented status disagrees with the handlers.
+- Responses allow fields the document does not list (clients must ignore unknown fields: within v1 fields are
+  only added); requests are strict.
+- Better Auth's early-stage OpenAPI plugin is **not** used and is not the contract.
+
+Change a schema or a route, run `npm run openapi:generate`, review the diff in the contract, commit both.
+A client generated from the contract (the Swift client of the native template) is regenerated from this file.
+
+## What this feature does not do
+
+No social login, push notification, refresh-token scheme or device registry. A bearer session lasts as long as
+a browser session (7 days, refreshed on use) and ends on sign-out, revocation, expiry or a password change.

@@ -101,6 +101,14 @@ auth:
     {% if auth is not boolean %}Answer true or false.{% elif auth and not zod %}auth requires zod: answer zod=true as well (auth is never enabled for you).{% elif auth and not rest_api %}auth requires rest_api: answer rest_api=true as well (auth is never enabled for you).{% elif auth and database == 'none' %}auth requires a database: answer database=postgres or database=supabase as well (auth is never enabled for you).{% endif %}
   help: "Add authentication? (requires zod, rest_api and a database; adds Better Auth email/password sign-in at /api/auth, a least-privilege runtime database role, owner-scoped items with row-level security and a protected /api/v1/items API. Local development only: email verification, password-reset delivery and public sign-up are deployment responsibilities, see docs/auth.md)"
 
+native_client:
+  type: yaml  # a strict boolean: see the note above the questions
+  default: false
+  choices: [false, true]
+  validator: >-
+    {% if native_client is not boolean %}Answer true or false.{% elif native_client and not auth %}native_client requires auth: answer auth=true as well (native_client is never enabled for you, and neither is auth).{% endif %}
+  help: "Serve native (non-browser) clients? (requires auth; accepts the Better Auth session token as `Authorization: Bearer`, in addition to the browser cookie, with the same sessions, expiry, revocation and authorization; and commits a deterministic OpenAPI 3.1 contract for /api/v1 in openapi/openapi.json, generated from the Zod schemas and checked by `npm run check`. See docs/native-client.md)"
+
 # Computed: never asked and never recorded. Readable names for conditions used in file names, where an
 # expression such as `rest_api or database != 'none'` would be hard to read. Tests check they always
 # agree with the answers.

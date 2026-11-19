@@ -21,7 +21,8 @@
     "db:migrate": "node scripts/db/cli.mjs migrate",
     "db:verify": "node scripts/db/cli.mjs verify",
     "db:lock": "node scripts/db/cli.mjs lock",{% if auth %}
-    "db:roles": "node scripts/db/cli.mjs roles",{% endif %}
+    "db:roles": "node scripts/db/cli.mjs roles",{% endif %}{% if native_client %}
+    "openapi:generate": "node scripts/openapi.mjs",{% endif %}
     "test:db": "vitest run --config vitest.db.config.mts"{% endif %}
   },
   "dependencies": {

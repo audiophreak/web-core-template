@@ -1,0 +1,854 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Application API",
+    "version": "1.0.0",
+    "description": "The application-owned REST API, version 1. Errors are RFC 9457 problem details with a stable `code`. Within v1 fields and codes are only added, never renamed or removed; clients ignore fields they do not know. Protected operations take the Better Auth session token as `Authorization: Bearer <token>`."
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "The application's own origin."
+    }
+  ],
+  "paths": {
+    "/api/v1/app-info": {
+      "get": {
+        "operationId": "getAppInfo",
+        "summary": "The application's name and description",
+        "tags": ["public"],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "The application's name and description.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppInfo"
+                }
+              }
+            }
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/examples/validate": {
+      "post": {
+        "operationId": "validateExample",
+        "summary": "Validate an example request body (nothing is stored)",
+        "tags": ["public"],
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ValidateExampleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The body is valid.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ValidateExampleResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/session": {
+      "get": {
+        "operationId": "getSession",
+        "summary": "Who the caller is and when the session ends",
+        "tags": ["session"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The signed-in user and the session's expiry.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/sessions": {
+      "get": {
+        "operationId": "listSessions",
+        "summary": "The caller's own sessions",
+        "tags": ["session"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The caller's sessions; the current one is marked.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/items": {
+      "get": {
+        "operationId": "listItems",
+        "summary": "The caller's items, newest first",
+        "tags": ["items"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100000,
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of the caller's items.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ItemList"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "post": {
+        "operationId": "createItem",
+        "summary": "Create an item owned by the caller",
+        "tags": ["items"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateItemRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The created item.",
+            "headers": {
+              "Location": {
+                "description": "The new item's URL.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Item"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/OriginNotAllowed"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    },
+    "/api/v1/items/{id}": {
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true,
+          "description": "An item id.",
+          "schema": {
+            "$ref": "#/components/schemas/ItemId"
+          }
+        }
+      ],
+      "get": {
+        "operationId": "getItem",
+        "summary": "One of the caller's items",
+        "description": "Someone else's item answers 404, exactly like a missing one.",
+        "tags": ["items"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Item"
+                }
+              }
+            }
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "patch": {
+        "operationId": "updateItem",
+        "summary": "Change the title and/or body of one of the caller's items",
+        "tags": ["items"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateItemRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated item.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Item"
+                }
+              }
+            }
+          },
+          "400": {
+            "$ref": "#/components/responses/BadRequest"
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/OriginNotAllowed"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "413": {
+            "$ref": "#/components/responses/PayloadTooLarge"
+          },
+          "415": {
+            "$ref": "#/components/responses/UnsupportedMediaType"
+          },
+          "422": {
+            "$ref": "#/components/responses/ValidationFailed"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      },
+      "delete": {
+        "operationId": "deleteItem",
+        "summary": "Delete one of the caller's items",
+        "tags": ["items"],
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The item was deleted."
+          },
+          "401": {
+            "$ref": "#/components/responses/Unauthenticated"
+          },
+          "403": {
+            "$ref": "#/components/responses/OriginNotAllowed"
+          },
+          "404": {
+            "$ref": "#/components/responses/NotFound"
+          },
+          "500": {
+            "$ref": "#/components/responses/InternalError"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "The signed session token Better Auth returns in the `set-auth-token` header of a successful sign-in (POST /api/auth/sign-in/email). It is the same session the browser cookie belongs to: it expires, and sign-out or revocation ends it at once."
+      }
+    },
+    "schemas": {
+      "AppInfo": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200
+          }
+        },
+        "required": ["name", "description"]
+      },
+      "Item": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "title": {
+            "type": "string"
+          },
+          "body": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": ["id", "title", "body", "createdAt", "updatedAt"]
+      },
+      "ItemList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Item"
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": ["items", "limit", "offset"]
+      },
+      "Session": {
+        "type": "object",
+        "properties": {
+          "user": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "email": {
+                "type": "string",
+                "maxLength": 320
+              },
+              "name": {
+                "type": "string",
+                "maxLength": 200
+              }
+            },
+            "required": ["id", "email", "name"]
+          },
+          "session": {
+            "type": "object",
+            "properties": {
+              "expiresAt": {
+                "type": "string",
+                "format": "date-time"
+              }
+            },
+            "required": ["expiresAt"]
+          }
+        },
+        "required": ["user", "session"]
+      },
+      "SessionList": {
+        "type": "object",
+        "properties": {
+          "sessions": {
+            "maxItems": 100,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 100
+                },
+                "createdAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "expiresAt": {
+                  "type": "string",
+                  "format": "date-time"
+                },
+                "userAgent": {
+                  "type": ["string", "null"],
+                  "maxLength": 300
+                },
+                "current": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "id",
+                "createdAt",
+                "expiresAt",
+                "userAgent",
+                "current"
+              ]
+            }
+          }
+        },
+        "required": ["sessions"]
+      },
+      "ValidateExampleResult": {
+        "type": "object",
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "const": true
+          },
+          "titleLength": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "priority": {
+            "type": "string",
+            "examples": ["low", "normal", "high"]
+          },
+          "tagCount": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 5
+          }
+        },
+        "required": ["valid", "titleLength", "priority", "tagCount"]
+      },
+      "Problem": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "pattern": "^urn:problem-type:[a-z_]+$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "status": {
+            "type": "integer",
+            "minimum": 400,
+            "maximum": 599
+          },
+          "detail": {
+            "type": "string",
+            "maxLength": 200
+          },
+          "code": {
+            "type": "string",
+            "examples": [
+              "invalid_json",
+              "payload_too_large",
+              "unsupported_media_type",
+              "validation_failed",
+              "method_not_allowed",
+              "not_found",
+              "internal_error",
+              "unauthenticated",
+              "origin_not_allowed"
+            ]
+          },
+          "errors": {
+            "maxItems": 10,
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "maxLength": 100
+                },
+                "message": {
+                  "type": "string",
+                  "maxLength": 200
+                }
+              },
+              "required": ["path", "message"]
+            }
+          }
+        },
+        "required": ["type", "title", "status", "code"]
+      },
+      "CreateItemRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "body": {
+            "default": "",
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": ["title"],
+        "additionalProperties": false
+      },
+      "UpdateItemRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "body": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "additionalProperties": false
+      },
+      "ValidateExampleRequest": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "priority": {
+            "default": "normal",
+            "type": "string",
+            "enum": ["low", "normal", "high"]
+          },
+          "tags": {
+            "default": [],
+            "maxItems": 5,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 20,
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+            }
+          }
+        },
+        "required": ["title"],
+        "additionalProperties": false
+      },
+      "ItemId": {
+        "type": "string",
+        "format": "uuid"
+      }
+    },
+    "responses": {
+      "BadRequest": {
+        "description": "Problem details (RFC 9457). Stable `code`: `invalid_json`.",
+        "headers": {
+          "Cache-Control": {
+            "description": "Always `no-store`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "Unauthenticated": {
+        "description": "Problem details (RFC 9457). Stable `code`: `unauthenticated`.",
+        "headers": {
+          "Cache-Control": {
+            "description": "Always `no-store`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "OriginNotAllowed": {
+        "description": "Problem details (RFC 9457). Stable `code`: `origin_not_allowed`.",
+        "headers": {
+          "Cache-Control": {
+            "description": "Always `no-store`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "NotFound": {
+        "description": "Problem details (RFC 9457). Stable `code`: `not_found`.",
+        "headers": {
+          "Cache-Control": {
+            "description": "Always `no-store`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "MethodNotAllowed": {
+        "description": "Problem details (RFC 9457). Stable `code`: `method_not_allowed`.",
+        "headers": {
+          "Cache-Control": {
+            "description": "Always `no-store`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          "Allow": {
+            "description": "The methods this resource supports.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "PayloadTooLarge": {
+        "description": "Problem details (RFC 9457). Stable `code`: `payload_too_large`.",
+        "headers": {
+          "Cache-Control": {
+            "description": "Always `no-store`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "UnsupportedMediaType": {
+        "description": "Problem details (RFC 9457). Stable `code`: `unsupported_media_type`.",
+        "headers": {
+          "Cache-Control": {
+            "description": "Always `no-store`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "ValidationFailed": {
+        "description": "Problem details (RFC 9457). Stable `code`: `validation_failed`.",
+        "headers": {
+          "Cache-Control": {
+            "description": "Always `no-store`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      },
+      "InternalError": {
+        "description": "Problem details (RFC 9457). Stable `code`: `internal_error`.",
+        "headers": {
+          "Cache-Control": {
+            "description": "Always `no-store`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        },
+        "content": {
+          "application/problem+json": {
+            "schema": {
+              "$ref": "#/components/schemas/Problem"
+            }
+          }
+        }
+      }
+    }
+  }
+}

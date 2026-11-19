@@ -284,7 +284,7 @@ def test_the_selection_is_recorded_and_composes_with_every_other_selection(apps,
 
 
 def test_every_supported_configuration_renders_and_records_exactly_its_selection(template_repo: Path, tmp_path: Path) -> None:
-    assert len(CONFIGURATIONS) == 17
+    assert len(CONFIGURATIONS) == 21
     for index, selection in enumerate(CONFIGURATIONS):
         project = tmp_path / f"c{index}"
         render(template_repo, project, **f.answers(selection, REGISTRY))

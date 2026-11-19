@@ -1,0 +1,14 @@
+import { describe, expect, it } from "vitest";
+import { PROBLEM_STATUS } from "@/lib/openapi/document";
+import { problemCodes } from "@/lib/schemas/v1";
+import { problem } from "./responses";
+
+describe("the OpenAPI contract and the problem responses", () => {
+  it("uses the status each stable problem code is really sent with", () => {
+    expect(Object.keys(PROBLEM_STATUS).sort()).toEqual(
+      [...problemCodes].sort(),
+    );
+    for (const code of problemCodes)
+      expect(problem(code).status, code).toBe(PROBLEM_STATUS[code]);
+  });
+});

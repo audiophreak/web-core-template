@@ -1,6 +1,7 @@
 import "server-only";
 import { betterAuth } from "better-auth";
-import type { Pool } from "pg";
+{% if native_client %}import { bearer } from "better-auth/plugins";
+{% else %}{% endif %}import type { Pool } from "pg";
 import { getPool } from "@/server/db/pool";
 import { loadAuthConfig, type AuthConfig } from "./config";
 
@@ -26,7 +27,12 @@ export function createAuth(
     baseURL: config.baseURL,
     trustedOrigins: [...config.trustedOrigins],
     telemetry: { enabled: false },
-    emailAndPassword: {
+{% if native_client %}    // Native clients send `Authorization: Bearer <signed session token>`, the value of the
+    // `set-auth-token` header that sign-in returns. It is turned into the same session cookie the
+    // browser uses, so one session table, one expiry and one revocation serve both. A bare token
+    // (without its signature) is refused.
+    plugins: [bearer({ requireSignature: true })],
+{% else %}{% endif %}    emailAndPassword: {
       enabled: true,
       disableSignUp: !config.signUpEnabled,
       // No mail service exists here: verification and reset links cannot be delivered (docs/auth.md).

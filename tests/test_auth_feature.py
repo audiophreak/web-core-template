@@ -85,12 +85,13 @@ def test_auth_is_a_registered_boolean_feature_with_its_prerequisites() -> None:
     assert (feature.choices, feature.requires, feature.conflicts, feature.npm) == ((), ("zod", "rest_api", "database"), (), True)
 
 
-def test_the_valid_auth_configurations_are_exactly_the_four_that_have_all_prerequisites() -> None:
+def test_the_valid_auth_configurations_are_exactly_the_four_that_have_all_prerequisites_with_and_without_native_client() -> None:
     selections = [s for s in f.configurations(REGISTRY) if "auth" in s]
     assert sorted(sorted(s) for s in selections) == sorted(
-        sorted({"auth", "zod", "rest_api", f"database={provider}", *(["forms"] if forms else [])})
+        sorted({"auth", "zod", "rest_api", f"database={provider}", *(["forms"] if forms else []), *(["native_client"] if native else [])})
         for provider in ("postgres", "supabase")
         for forms in (False, True)
+        for native in (False, True)
     )
     assert {f.lock_key(s, REGISTRY) for s in selections} == {
         "auth+database-postgres+zod", "auth+database-supabase+zod", "auth+database-postgres+forms+zod", "auth+database-supabase+forms+zod",
