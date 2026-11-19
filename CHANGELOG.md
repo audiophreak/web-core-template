@@ -2,6 +2,20 @@
 
 Versions are git tags (`vMAJOR.MINOR.PATCH`). In 0.x, a minor bump may be breaking.
 
+## 0.7.1
+
+Documentation-only patch. Nothing under `template/`, `copier.yml`, `features.yml`, `locks/` or `tools/` changes, so
+every generated project, its OpenAPI contract, dependencies and lockfiles are byte-identical to 0.7.0 (apart from
+`_commit` in `.copier-answers.yml`). devkit 0.8.x supports it unchanged.
+
+- `README.md`, "Tests": the stale "everything, 129 tests" and "generates five apps" are replaced by an accurate
+  description of the suite: the `e2e` and `db` markers and what each needs, the fast selection
+  `-m "not e2e and not db"` (the old `-m "not e2e"` also ran the Docker tests), how CI splits it, the 21 feature
+  combinations of the main end-to-end test, the counts at 0.7.x (919 tests: 780 unmarked, 32 `e2e`, 109 `db`), and
+  `pytest --collect-only -q` to see the current number.
+- `docs/ci-evidence.md` records the negative-control probe that proved CI reports a deliberate failure and skip
+  (commit `e451b93`, closed pull request #3), so its local branch could be removed without losing the record.
+
 ## 0.7.0
 
 Optional **native-client** support. Additive: with `native_client` off (the default) every configuration is

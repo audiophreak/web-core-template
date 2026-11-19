@@ -76,8 +76,19 @@ AGENTS.md         rules for AI agents working on this repository
 ## Tests
 
 ```bash
-uv sync                        # project-local environment from uv.lock
-uv run pytest                  # everything, 129 tests (about 70 s with a warm npm cache)
-uv run pytest -m "not e2e"     # fast: render, validation, versions, upgrades (no npm, about 30 s)
-uv run pytest -m e2e           # generates five apps (feature combinations) and runs npm ci + npm run check in each
+uv sync                                   # project-local environment from uv.lock
+uv run pytest -m "not e2e and not db"     # fast: render, validation, features, locks, versions, upgrades (no npm, no Docker)
+uv run pytest -m e2e                      # generates apps and runs npm ci + npm run check in each (Node 26, network)
+uv run pytest -m db                       # real PostgreSQL and a real local Supabase stack (a running Docker daemon)
+uv run pytest                             # everything
+uv run pytest --collect-only -q           # the current number of tests, per marker with -m
 ```
+
+Two markers split the suite by what it needs: `e2e` (installs and checks generated apps) and `db` (starts databases in
+Docker). A few tests carry both. Without Docker the `db` tests skip with a stated reason; CI sets `REQUIRE_DOCKER=1`, so
+there they fail instead. CI runs `-m "not db"` on Python 3.12 and 3.14 and `-m db` in a separate `database` job.
+
+The main end-to-end test, `test_generated_app_installs_and_passes_the_validation_gate`, is parametrized over feature
+combinations (21 at 0.7.x: from the defaults through Zod, Forms and the REST API, each database provider,
+authentication and native-client support, several with `cache_components` off); further e2e tests cover evidence recording and the Prettier handling of
+`.copier-answers.yml`. At 0.7.x, `pytest --collect-only` reports 919 tests: 780 without either marker, 32 `e2e`, 109 `db`.

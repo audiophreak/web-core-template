@@ -80,6 +80,24 @@ for case in suite.iter("testcase"):
 None are expected in CI: Node is set up from `template/.nvmrc`, so the end-to-end tests run. Any skip
 appears in `junit.xml` and the summary with its reason.
 
+## Negative control: the failure probe
+
+The evidence workflow was proven to report a red run correctly, not only green ones. On 2026-11-17 a probe commit added
+`tests/test_zz_ci_probe.py` with one deliberately failing test (`assert 1 + 1 == 3`) and one deliberately skipped test
+(reason "deliberate probe skip: must appear with this reason in junit.xml"), on a branch `probe/ci-evidence-failure`
+opened as a pull request titled "PROBE (do not merge): deliberate CI failure":
+
+| | |
+|---|---|
+| Probe commit | `e451b938fa2f5e2a9e6f059101c5f22942a34eda` |
+| Pull request | #3, closed without merging |
+| CI run | `44118473632`, conclusion **failure** on both Python versions (3.12 and 3.14), as intended |
+
+It showed that a failing run still uploads its evidence and that the failure and the skip, with its reason, appear in
+`junit.xml` and the job summary. The commit was never merged into `main`. The branch was deleted from GitHub after the
+probe; the commit remains reachable there through the closed pull request (`refs/pull/3/head`), and the local branch ref
+was removed in the 0.8.1/0.7.1 documentation closeout once this record existed.
+
 ## Security
 
 - The workflow keeps `contents: read`, pinned actions and no secrets; the artifact upload uses the
