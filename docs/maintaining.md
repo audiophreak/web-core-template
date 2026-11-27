@@ -76,7 +76,7 @@ a tag never points at an unverified commit.
    ```
 
 8. Verify the remote tag resolves to the merge commit (`git ls-remote --tags origin`), and that the
-   repository is still private.
+   repository visibility is as intended.
 9. Never move or delete a published tag; fix forward with a new patch release.
 
 Generated projects record the tag in `.copier-answers.yml` (`_commit`) and the repository URL

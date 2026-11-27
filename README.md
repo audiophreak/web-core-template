@@ -17,8 +17,8 @@ With `devkit` (picks the newest release that devkit supports):
 uv run devkit new my-app --description "What it does" --output-dir ..
 ```
 
-With Copier directly, from the published origin and an explicit release (the repository is
-private, so git needs credentials it can use without prompting, for example after `gh auth
+With Copier directly, from the published origin and an explicit release (if the template
+repository is private, git needs credentials it can use without prompting, for example after `gh auth
 setup-git`):
 
 ```bash
@@ -92,3 +92,12 @@ The main end-to-end test, `test_generated_app_installs_and_passes_the_validation
 combinations (21 at 0.7.x: from the defaults through Zod, Forms and the REST API, each database provider,
 authentication and native-client support, several with `cache_components` off); further e2e tests cover evidence recording and the Prettier handling of
 `.copier-answers.yml`. At 0.7.x, `pytest --collect-only` reports 919 tests: 780 without either marker, 32 `e2e`, 109 `db`.
+
+## Contributing, security and licence
+
+- [Contributing](CONTRIBUTING.md): development setup, ground rules and pull requests.
+- [Security policy](SECURITY.md): supported releases and how to report a vulnerability privately.
+- This template is licensed under the [MIT License](LICENSE). Parts of `template/` derive from
+  `create-next-app` and shadcn/ui (both MIT); their notices are in
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). A generated project is your own code: the
+  template adds no licence file to it, so choose one for your project.

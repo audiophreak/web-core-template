@@ -3,8 +3,9 @@
 Generated projects record where they came from in `.copier-answers.yml` (`_src_path` and
 `_commit`). Commit that file and never edit it by hand.
 
-The template repository is private: `copier update` needs git credentials that work without a
-prompt (for example after `gh auth setup-git`), and fails with a git authentication error otherwise.
+If the template repository is private, `copier update` needs git credentials that work without a
+prompt (for example after `gh auth setup-git`), and fails with a git authentication error otherwise. A
+public template repository needs no credentials.
 
 Copier updates by three-way merge between the release the project was generated from, the release
 you update to, and your current files, so your edits are kept. It needs a clean git working tree.
