@@ -104,7 +104,7 @@ was removed in the 0.8.1/0.7.1 documentation closeout once this record existed.
   runner's own scoped token.
 - Reports are produced by pytest, `npm` and a few shell lines that write named fields. **Nothing dumps
   the environment**, and JUnit logging is off. Gate output can quote project files, so treat the
-  artifacts as repository-internal (in a private repository, visible to those who can read it).
+  artifacts as visible to everyone who can read the repository (everyone, for a public repository).
 - Before upload, the reports are scanned for token-shaped strings (GitHub tokens, private-key
   headers, AWS key ids) with a **quiet** `grep -q`: the matching text is never printed. A hit, or a
   scan that cannot run, fails the job with a generic error and **skips the upload**. The job summary

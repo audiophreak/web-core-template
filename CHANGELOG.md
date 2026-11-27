@@ -2,6 +2,16 @@
 
 Versions are git tags (`vMAJOR.MINOR.PATCH`). In 0.x, a minor bump may be breaking.
 
+## Unreleased
+
+Repository documentation for public distribution. Nothing under `template/`, `copier.yml`, `features.yml`, `locks/`
+or `tools/` changes, so generated projects are byte-identical to 0.7.1.
+
+- Added `LICENSE` (MIT), `THIRD_PARTY_NOTICES.md` (create-next-app and shadcn/ui, both MIT), `SECURITY.md` and
+  `CONTRIBUTING.md`.
+- `README.md`, `docs/upgrading.md`, `docs/ci-evidence.md`, `docs/maintaining.md`: credential guidance applies when the
+  template repository is private, instead of stating that it is private.
+
 ## 0.7.1
 
 Documentation-only patch. Nothing under `template/`, `copier.yml`, `features.yml`, `locks/` or `tools/` changes, so
